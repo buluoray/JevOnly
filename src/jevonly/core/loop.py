@@ -227,7 +227,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
     copied = {}  # copied_N -> {"text", "unit", ...}: values read off pages, also entered into task["facts"]
     walled_hosts = set()  # sites that answered a navigation with a block page; their links are not offered again
     copy_dups = {}  # url -> duplicate copies attempted there; two withdraw the copy action on that page
-    asked_missing = False  # the give-up guard asked "which goal clause is still unsatisfied" (once per run)
+    asked_missing = set()  # urls where the guard asked "which goal clause is still unsatisfied here" (once per page)
     forced_wanted = None  # ...and the clause it named, for the copy it forces next
     copy_failed = {}  # url -> clauses for which nothing on that page was chosen; not offered for copying there again
 
@@ -563,24 +563,34 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                 ],
             )
             none_streak = none_streak + 1 if ranked[0] == "none" else 0
-            weak_stop = ranked[0] == "none" and none_streak >= NONE_STREAK_K and probs["none"] < NONE_T
             copy_cand = next((c for c in all_cands if c["id"] == "copy"), None)
-            if forced_wanted and copy_cand is not None and not weak_stop:
-                # a chained copy decided right after the previous one (see the copy branch)
+            if forced_wanted and copy_cand is not None:
+                # a chained copy decided right after the previous one (see the copy branch). It outranks a
+                # weak stop: on the closed-PR list the number was copied, the title was named as the next
+                # value, and the very next none-led plan stopped the run with the title never read.
                 if copy_cand not in cands:
                     cands.append(copy_cand)
                 ranked = ["copy"] + [k for k in ranked if k not in ("none", "copy")]
                 probs["copy"] = 1.0
                 rec["events"].append(f"chained copy for `{forced_wanted}`")
-            if weak_stop and not asked_missing and copy_cand is not None and not values_in_hand():
-                # The loop is about to give up on a soft signal (none first three times, done below the
-                # bar). Before it does, one question the code can act on: which part of the goal is still
-                # unsatisfied that this page could answer? On the flight results the price had never been
-                # read; this is where that run stopped with the time only. One forced copy, then the
-                # give-up stands if nothing comes of it. A copy FOR ANOTHER CLAUSE is not the copy already
-                # used on this page state, so the once-per-state memo does not apply to it.
-                asked_missing = True
-                clauses = open_clauses(obs.get("url", ""))
+            page_key = obs.get("url", "")
+            if (
+                ranked[0] == "none"
+                and value_clauses
+                and not values_in_hand()
+                and copy_cand is not None
+                and page_key not in asked_missing
+            ):
+                # 'none' with values still unread means "no navigation is needed here", not "nothing is
+                # left to do": on the GitHub closed-PR list and the sorted Amazon results the values were
+                # on screen, copy carried 0.15-0.19 and 'none' 0.75-0.81, and the loop either looked again
+                # three times or stopped outright. So the first none-led plan on a page asks the one
+                # question the code can act on -- which value clause could this page answer -- and copies
+                # for it now. Asked once per page; a clause that yields nothing here is not offered again
+                # (copy_failed). A copy FOR ANOTHER CLAUSE is not the copy already used on this page
+                # state, so the once-per-state memo does not apply to it.
+                asked_missing.add(page_key)
+                clauses = open_clauses(page_key)
                 if clauses:
                     w = jev({**base, "state": obs}, q_copy_target(clauses), "copy")["wanted"]
                     if w["choice"] != "none":
@@ -588,17 +598,16 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                         emit(
                             "note",
                             step=step,
-                            text=f"about to stop on a weak signal (none x{none_streak}, done {done:.2f}) but `{forced_wanted}` "
-                            f"looks unsatisfied (p={w['probabilities'].get(forced_wanted, 0.0):.2f}) -> one copy for it first",
+                            text=f"'none' leads (p={probs['none']:.2f}) but `{forced_wanted}` is still unread and this page "
+                            f"looks like it shows it (p={w['probabilities'].get(forced_wanted, 0.0):.2f}) -> copying for it first",
                         )
-                        rec["events"].append(f"weak stop deferred: copy forced for `{forced_wanted}`")
+                        rec["events"].append(f"none-led with values missing: copy forced for `{forced_wanted}`")
                         if copy_cand not in cands:
                             cands.append(copy_cand)
                         ranked = ["copy"] + [k for k in ranked if k not in ("none", "copy")]
                         probs["copy"] = 1.0  # code-owned choice: not subject to the noise floor below
-                        # The forced copy is the last thing the code can do for the goal. If 'none' leads the
-                        # very next plan, that is the stop -- not the first of three more, which had the loop
-                        # trying a 0.15 'find' and opening a details panel before it gave up.
+                        # The forced copy is the last thing the code can do for the goal on this page. If
+                        # 'none' leads the very next plan, that is the stop -- not the first of three more.
                         none_streak = NONE_STREAK_K - 1
             if ranked[0] == "none":
                 have_values = values_in_hand()
@@ -1061,6 +1070,11 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             # times on the results page, it sent the loop after a details button and a dead
                             # link once the values were already in hand.
                             copy_failed.setdefault(obs.get("url", ""), set()).add(wanted)
+                            # ...but another clause may still be readable here: on the Amazon results the
+                            # rating clause won the vote twice and failed twice while the price, right beside
+                            # it, was never asked for. Let the guard ask again on this page, minus the failed
+                            # clause (open_clauses drops it).
+                            asked_missing.discard(obs.get("url", ""))
                         ranked = [k for k in ranked if k != pick]
                     if not succeeded and ranked and probs.get(ranked[0], 0.0) < act_floor:
                         # the copy was the only candidate with weight; what is left is below the line 'none'

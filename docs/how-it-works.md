@@ -106,30 +106,30 @@ If no goal span fits, the fallback keyboard vote is bounded to letters, digits, 
 
 These values are constants in `jevonly.core.loop`, `jevonly.core.keyboard`, and `jevonly.core.text`.
 
-| Signal or guard                   |   Value | Code behavior                                                                                                                             |
-| --------------------------------- | ------: | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Verification                      |  `0.50` | Accept an action at or above the threshold.                                                                                               |
-| Off path                          |  `0.60` | Undo the last reversible, non-weak action and re-plan.                                                                                    |
-| Done                              |  `0.70` | Treat Jev as saying the task is done; a code check can still refuse.                                                                      |
-| Strong `none`                     |  `0.80` | With `done >= 0.35`, stop or enter completion-check feedback.                                                                             |
-| Weak done                         |  `0.35` | Minimum done score for a single strong `none` vote to stop the run.                                                                       |
-| Irreversible action (`risk`)      |  `0.50` | An action at or above this is gated: `refuse` skips it (CLI default), `ask` waits for the operator (viewer default), `allow` performs it. |
-| Consecutive `none` plans          |     `3` | Three `none`-led plans in a row, at any done score: one forced copy for an unsatisfied clause, then give up.                              |
-| Candidate under a `none`-led plan |  `0.25` | Once `none` leads, an action needs at least this much of the vote to be tried; otherwise the loop looks again.                            |
-| Next-best fallback                |  `0.02` | Alternatives below this probability are not fallbacks.                                                                                    |
-| Progress                          |  `0.25` | Below this, count an accepted step as no progress.                                                                                        |
-| Consecutive no-progress steps     |     `3` | Reject the latest reversible action at that state and re-plan.                                                                            |
-| Irreversible risk                 |  `0.50` | Apply irreversible-action handling.                                                                                                       |
-| Proven not applied                |  `0.50` | Permit the one run-wide retry of a committing request.                                                                                    |
-| Borderline verification band      | `±0.06` | Record borderline injected faults; changed near-misses are re-observed.                                                                   |
-| Re-observation wait               | `1.5 s` | Pause before rechecking an unclear or consequential near-miss.                                                                            |
-| Attempts per plan                 |     `3` | Bound same/next-best retries.                                                                                                             |
-| Completion-check feedback         |     `2` | Show unmet checks to Jev at most twice before giving up.                                                                                  |
-| Repeated-state visits             |   `> 8` | Stop as a cycle.                                                                                                                          |
-| Repeated-widget window            |     `4` | Stop when four accepted actions repeat one widget family without improving done.                                                          |
-| Copy fan-out                      |    `10` | Maximum groups per narrowing round.                                                                                                       |
-| Copy rounds                       |     `6` | Maximum narrowing rounds per collapse attempt.                                                                                            |
-| Keyboard decisions                |    `32` | Clear and abandon a field when exceeded.                                                                                                  |
+| Signal or guard                   |   Value | Code behavior                                                                                                                                         |
+| --------------------------------- | ------: | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Verification                      |  `0.50` | Accept an action at or above the threshold.                                                                                                           |
+| Off path                          |  `0.60` | Undo the last reversible, non-weak action and re-plan.                                                                                                |
+| Done                              |  `0.70` | Treat Jev as saying the task is done; a code check can still refuse.                                                                                  |
+| Strong `none`                     |  `0.80` | With `done >= 0.35`, stop or enter completion-check feedback.                                                                                         |
+| Weak done                         |  `0.35` | Minimum done score for a single strong `none` vote to stop the run.                                                                                   |
+| Irreversible action (`risk`)      |  `0.50` | An action at or above this is gated: `refuse` skips it (CLI default), `ask` waits for the operator (viewer default), `allow` performs it.             |
+| Consecutive `none` plans          |     `3` | Three `none`-led plans in a row, at any done score, is the stop; a `none`-led plan with value clauses still unread first forces one copy (see below). |
+| Candidate under a `none`-led plan |  `0.25` | Once `none` leads, an action needs at least this much of the vote to be tried; otherwise the loop looks again.                                        |
+| Next-best fallback                |  `0.02` | Alternatives below this probability are not fallbacks.                                                                                                |
+| Progress                          |  `0.25` | Below this, count an accepted step as no progress.                                                                                                    |
+| Consecutive no-progress steps     |     `3` | Reject the latest reversible action at that state and re-plan.                                                                                        |
+| Irreversible risk                 |  `0.50` | Apply irreversible-action handling.                                                                                                                   |
+| Proven not applied                |  `0.50` | Permit the one run-wide retry of a committing request.                                                                                                |
+| Borderline verification band      | `±0.06` | Record borderline injected faults; changed near-misses are re-observed.                                                                               |
+| Re-observation wait               | `1.5 s` | Pause before rechecking an unclear or consequential near-miss.                                                                                        |
+| Attempts per plan                 |     `3` | Bound same/next-best retries.                                                                                                                         |
+| Completion-check feedback         |     `2` | Show unmet checks to Jev at most twice before giving up.                                                                                              |
+| Repeated-state visits             |   `> 8` | Stop as a cycle.                                                                                                                                      |
+| Repeated-widget window            |     `4` | Stop when four accepted actions repeat one widget family without improving done.                                                                      |
+| Copy fan-out                      |    `10` | Maximum groups per narrowing round.                                                                                                                   |
+| Copy rounds                       |     `6` | Maximum narrowing rounds per collapse attempt.                                                                                                        |
+| Keyboard decisions                |    `32` | Clear and abandon a field when exceeded.                                                                                                              |
 
 The `start` event publishes the run-specific thresholds used by the loop so event consumers do not need to duplicate most constants.
 
@@ -162,7 +162,9 @@ called with `{step, action, risk, policy}` and must return a boolean -- the view
 approval bar, the CLI from a terminal prompt, and anything that cannot answer (no terminal, an exception,
 five minutes of silence in the viewer) counts as no.
 
-After a value is copied, the loop asks once more which clause this page can still answer and, when one is named with confidence, copies for it on the very next plan -- the price beside the time is read without waiting for three `none`-led plans.
+A `none`-led plan while value clauses are still unread means "no navigation is needed here", not "nothing is left to do": on a results page the values are on screen and `copy` polls a fraction of the vote. So the first `none`-led plan on a page asks Jev which unread clause this page could answer and, when one is named, forces a copy for it before anything else -- whatever the strength of `none`. The question is asked once per page; a clause for which nothing was chosen there is not offered on that page again, but the guard may ask once more for the remaining clauses (the rating failed twice on the Amazon results while the price beside it was never asked for).
+
+After a value is copied, the loop asks once more which clause this page can still answer and, when one is named with confidence, copies for it on the very next plan -- the price beside the time is read without waiting for three `none`-led plans. That chained copy outranks a weak stop: on the closed-PR list the number was copied, the title named next, and the following `none`-led plan would otherwise have ended the run with the title never read.
 
 ## How many values does the goal want?
 
