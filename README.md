@@ -2,6 +2,13 @@
 
 **Pure Jev that can "type" and drive towards task completion.** No LLM anywhere: code builds every option from the page and the goal, [Jev](https://typesafe.ai) only picks — and that is enough to fill forms, type, and finish the task.
 
+
+
+
+
+
+
+
 ```bash
 git clone https://github.com/buluoray/JevOnly.git && cd JevOnly && ./run.sh
 ```
