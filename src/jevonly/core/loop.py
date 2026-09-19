@@ -1334,17 +1334,25 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                 if getattr(env, "last_action_error", None):
                     ev["action_error"] = env.last_action_error
                     env.last_action_error = None
-                    # A control that will not take a click (covered, detached, disabled by script) is not
-                    # going to take the fourth one either: Kayak's "2 guests, 1 room" ate four steps and
-                    # eight timeouts. Three errors on one target in a run withdraw it everywhere.
-                    act_failures[cand["target_key"]] = act_failures.get(cand["target_key"], 0) + 1
-                    if act_failures[cand["target_key"]] >= 3 and cand["id"] not in banned:
-                        banned.add(cand["id"])
-                        emit(
-                            "note",
-                            step=step,
-                            text=f"{cand['desc'][:80]} failed to take an action {act_failures[cand['target_key']]} times -> withdrawn for the rest of the run",
-                        )
+                    if cand["kind"] == "find" and "is not on this page" in ev["action_error"]:
+                        # The word, not the control, failed: take it off the offer so a retry asks for
+                        # another word (or drops find when none is left). "compare" was tried three times
+                        # in one step on the Portland list and then find was banned for the whole run.
+                        cand["options"] = [o for o in cand.get("options", []) if o != value]
+                        if not cand["options"]:
+                            ranked = [k for k in ranked if k != cand["id"]]
+                    else:
+                        # A control that will not take a click (covered, detached, disabled by script) is
+                        # not going to take the fourth one either: Kayak's "2 guests, 1 room" ate four
+                        # steps and eight timeouts. Three errors on one target in a run withdraw it.
+                        act_failures[cand["target_key"]] = act_failures.get(cand["target_key"], 0) + 1
+                        if act_failures[cand["target_key"]] >= 3 and cand["id"] not in banned:
+                            banned.add(cand["id"])
+                            emit(
+                                "note",
+                                step=step,
+                                text=f"{cand['desc'][:80]} failed to take an action {act_failures[cand['target_key']]} times -> withdrawn for the rest of the run",
+                            )
                 changed = env.fingerprint(after) != fp
                 if injected and injected != "popup" and abs(ver - verify_t) <= BORDERLINE_BAND:
                     # This fault was decided by which side of the line a near-tie fell on. Record it:
