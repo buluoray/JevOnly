@@ -4,14 +4,16 @@ from .questions import q_collapse, q_goal_clause, q_narrow
 from .text import split_parts, unit_spans
 
 
-def collapse_pick(jev_fn, state, units, purpose, max_rounds=6, exclude=(), trace=None):
+def collapse_pick(jev_fn, state, units, purpose, max_rounds=6, exclude=(), trace=None, prefilter=None):
     """Narrow the page text down to one value by repeated choice: at most COLLAPSE_FANOUT parts per round, the
     chosen part split again, until a single line, whose pieces (regex spans + words + the line itself) are the
     last round. Long text is never pre-cut: the model sees it whole and points, the code only slices what it
     pointed at. `exclude` are pieces already rejected: taken off the last round only, because the right value
     often shares its line with the wrong one ("937 feet (286 m) and was completed in 1985"). `trace`, when a
     list is given, receives one record per round -- the options Jev saw, each with its probability, and the
-    pick -- so the UI can show how the text was narrowed down.
+    pick -- so the UI can show how the text was narrowed down. `prefilter(units) -> {"kept", "scores", ...}
+    | None` may shrink and reorder the haystack first (one batch classification); `None` means the full
+    haystack is used, and the shrink is written to the trace as a round of kind "prefilter".
     Returns {"text", "unit", "rounds"} or None."""
     cur = list(units)
     rounds = 0
@@ -30,6 +32,24 @@ def collapse_pick(jev_fn, state, units, purpose, max_rounds=6, exclude=(), trace
                     ],
                 }
             )
+
+    if prefilter is not None and len(cur) > 1:
+        ranked = prefilter(cur)
+        if ranked and ranked.get("kept"):
+            kept = list(ranked["kept"])
+            if trace is not None:
+                scores = ranked.get("scores", {})
+                trace.append(
+                    {
+                        "kind": "prefilter",
+                        "pick": f"{len(kept)} of {len(cur)} lines kept"
+                        + (f" ({ranked['model']})" if ranked.get("model") else ""),
+                        "options": [
+                            {"id": u[:40], "text": u[:160], "p": round(scores.get(u, 0.0), 3)} for u in kept[:8]
+                        ],
+                    }
+                )
+            cur = kept
 
     while cur and rounds < max_rounds:
         rounds += 1

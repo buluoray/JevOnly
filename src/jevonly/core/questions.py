@@ -430,3 +430,21 @@ def q_goal_clause(clauses, purpose):
             "criteria": crit,
         }
     }
+
+
+Q_REGISTER_COMPLETE = {
+    "answers_question": {
+        "type": "noul",
+        "instructions": (
+            "An agent pursuing `task_goal` is stopping. `facts` holds every value it copied during the run (copied_N), each "
+            "with the goal clause it was read for. Before the run, `unread_clauses` were also judged to ask for a value, but "
+            "no value was copied for them. Does the register already hold what the goal asked to read, so the run is complete?"
+        ),
+        "criteria": {
+            "true": "Yes: each unread clause is satisfied by a value already in `facts` (it restates or refers to the same "
+            "value under other words, e.g. a stop condition naming the value another clause read), or asks for nothing "
+            "that can be read.",
+            "false": "No: at least one unread clause asks for a distinct value the goal needs that is not in `facts`.",
+        },
+    }
+}

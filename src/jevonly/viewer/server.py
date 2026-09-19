@@ -268,6 +268,7 @@ def build_task(body: dict) -> tuple[dict, str]:
         "headed": bool(body.get("headed")),
         "thresholds": parse_thresholds(body.get("thresholds")),
         "irreversible": body.get("irreversible") if body.get("irreversible") in ("refuse", "ask", "allow") else "ask",
+        "prefilter": body.get("prefilter", True) is not False,
     }
     if task["irreversible"] == "ask":
         task["approve"] = ask_operator

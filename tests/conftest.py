@@ -76,3 +76,10 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "e2e" in item.keywords:
             item.add_marker(skip)
+
+
+@pytest.fixture(autouse=True)
+def _no_network_prefilter(monkeypatch):
+    """The copy pre-filter is one HTTP call to classifier.dev; tests run without a network, so it is off unless
+    a test turns it on itself (test_prefilter drives rank_units through a fake opener)."""
+    monkeypatch.setenv("JEVONLY_PREFILTER", "0")

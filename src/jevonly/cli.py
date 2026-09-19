@@ -120,6 +120,7 @@ def _run(args):
         "ctx_budget": 400,
         "thresholds": _thresholds(args.threshold),
         "irreversible": args.irreversible,
+        "prefilter": not args.no_prefilter,
     }
     if args.irreversible == "ask":
         task["approve"] = _ask_on_terminal
@@ -166,6 +167,11 @@ def _parser():
         choices=("refuse", "ask", "allow"),
         default="refuse",
         help="what to do with an action Jev judges irreversible: skip it (default), ask on the terminal, or perform it",
+    )
+    run.add_argument(
+        "--no-prefilter",
+        action="store_true",
+        help="skip the one-call classifier.dev pre-filter over the page text before a copy (collapse the full page instead)",
     )
     run.add_argument(
         "--threshold",

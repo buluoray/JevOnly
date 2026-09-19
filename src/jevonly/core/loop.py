@@ -5,6 +5,7 @@ import urllib.parse
 from contextlib import suppress
 
 from .. import envs
+from . import prefilter as _prefilter
 from .copy import collapse_pick
 from .jev import CALLS, jev
 from .keyboard import type_with_keyboard
@@ -14,6 +15,7 @@ from .questions import (
     Q_NOT_APPLIED,
     Q_OFFPATH,
     Q_PROGRESS,
+    Q_REGISTER_COMPLETE,
     Q_RISK,
     Q_VERIFY,
     Q_VERIFY3,
@@ -142,6 +144,16 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
     # no or is missing, "allow" performs it. Nothing irreversible runs without one of these saying so.
     irreversible_policy = str(task.get("irreversible") or "refuse")
     approver = task.get("approve")
+    # One batch classification before a collapse (same decision model, no key) so a long page is read from its
+    # best-scoring lines first; off with task["prefilter"]=False or JEVONLY_PREFILTER=0. Returns the
+    # collapse_pick `prefilter` argument for the clause being read, or None when the switch is off.
+    prefilter_on = _prefilter.enabled(task)
+
+    def prefilter_for(wanted):
+        if not prefilter_on:
+            return None
+        return lambda units: _prefilter.rank_units(units, wanted or "the value the goal asks to find", task["goal"])
+
     env = envs.make(task)
     log = {
         "id": task["id"],
@@ -230,7 +242,10 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
         value_clauses = [
             c
             for i, c in enumerate(all_clauses)
-            if ans[f"value_{i}"]["noul"] >= 0.5 or ans.get(f"needs_{i}", {}).get("noul", 0.0) >= 0.5
+            # `value` is the primary signal; `needs` (the clause needs a value no other clause asked for) is
+            # the backstop for "compare the two heights", and is held to a higher bar: at 0.5 it declared
+            # "Include nearby airports" a value on the flights goal (0.60), which no page can ever satisfy.
+            if ans[f"value_{i}"]["noul"] >= 0.5 or ans.get(f"needs_{i}", {}).get("noul", 0.0) >= 0.7
         ]
         emit(
             "note",
@@ -645,28 +660,81 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             log["stopped"] = "values_in_hand"
                             log["success"] = True
                         elif probs["none"] >= NONE_T or done >= done_t:
+                            missing = [c for c in value_clauses if c not in {v.get("wanted") for v in copied.values()}]
                             rec["events"].append(
                                 f"stop on the model's own signals: none={probs['none']:.2f}, done={done:.2f}"
+                                + (f"; values still missing: {missing}" if missing else "")
                             )
                             log["stopped"] = "stopped_on_done_signal"
-                            # no code-owned check exists in this variant; Jev's own done signal is the completion
-                            log["success"] = True
+                            # No code-owned check exists in this variant, so Jev's own done signal is the completion
+                            # -- unless the pre-analysis named values to read and some were never copied (Flights
+                            # once ended at none=0.95, done=0.02 with none of its three values read and was reported
+                            # as a pass). The pre-analysis over-declares too ("stop when you can read the number"
+                            # is the same number), so the register is put to Jev once, not to the clause count.
+                            complete = True
+                            if missing:
+                                complete = (
+                                    jev(
+                                        {**base, "unread_clauses": missing},
+                                        Q_REGISTER_COMPLETE,
+                                        "done",
+                                    )["answers_question"]["noul"]
+                                    >= 0.5
+                                )
+                                emit(
+                                    "note",
+                                    step=step,
+                                    text=f"stopping on the model's signal with {len(missing)} of {len(value_clauses)} value "
+                                    f"clause(s) never read -> register judged {'complete' if complete else 'incomplete: not a success'}",
+                                )
+                            log["success"] = complete
                         else:
-                            rec["events"].append(
-                                f"'none' led {none_streak} plans with done={done:.2f} < {done_t} -> giving up"
+                            # Giving up because a declared value was never read. The declaration is Jev's own
+                            # pre-analysis and over-declares ("Include nearby airports" counted as a value on the
+                            # flights goal, with time and price both in hand), so before calling this a failure the
+                            # register is put to Jev once: complete means the run stops as a success.
+                            missing = [c for c in value_clauses if c not in {v.get("wanted") for v in copied.values()}]
+                            complete = (
+                                bool(copied)
+                                and bool(missing)
+                                and (
+                                    jev({**base, "unread_clauses": missing}, Q_REGISTER_COMPLETE, "done")[
+                                        "answers_question"
+                                    ]["noul"]
+                                    >= 0.5
+                                )
                             )
-                            log["stopped"] = "gave_up_none_streak"
+                            if complete:
+                                rec["events"].append(
+                                    f"'none' led {none_streak} plans; {len(missing)} value clause(s) unread but the register "
+                                    "is judged complete -> stop"
+                                )
+                                emit(
+                                    "note",
+                                    step=step,
+                                    text=f"'none' led {none_streak} plans; {len(missing)} of {len(value_clauses)} value clause(s) "
+                                    "never read, but the register is judged complete -> stopping as done",
+                                )
+                                log["stopped"] = "values_in_hand"
+                                log["success"] = True
+                            else:
+                                rec["events"].append(
+                                    f"'none' led {none_streak} plans with done={done:.2f} < {done_t} -> giving up"
+                                )
+                                log["stopped"] = "gave_up_none_streak"
                     # The goal may have asked to FIND something. Read it off the final page by collapse (1-3
                     # choice calls) so the run ends with the answer, not only a screenshot of it.
                     units = page_units(obs, getattr(env, "_snap", None))
                     copied_vals = [str(v) for k, v in task["facts"].items() if str(k).startswith("copied_")]
                     got = None
                     answer_form, answer_trace = None, []
-                    if len(copied_vals) >= 2:
+                    if copied_vals:
                         # A goal that compares or collects several values is answered by the register as a whole,
                         # not by whichever one happens to be on the last page. Mixed into the page units the
                         # register lost to the page's own line (answer "166.4" for a compare-two-heights goal),
-                        # so it is asked on its own first: the register, or one value read off this page.
+                        # so it is asked on its own first: the register, or one value read off this page. One
+                        # copied value gets the same question: re-reading the page picked the metro population
+                        # (251,912) over the 138,753 already copied for the very clause the goal asked about.
                         reg = "; ".join(copied_vals)
                         qa = {
                             "answer_form": {
@@ -676,7 +744,11 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                                     "run (copied_N). Which form answers the goal?"
                                 ),
                                 "criteria": {
-                                    "all_copied": f"all the copied values together, as the goal asked for several: `{reg}`",
+                                    "all_copied": (
+                                        f"all the copied values together, as the goal asked for several: `{reg}`"
+                                        if len(copied_vals) > 1
+                                        else f"the value already copied for the goal's clause: `{reg}`"
+                                    ),
                                     "one_on_page": "one single value shown on the current page (the goal asked for one thing)",
                                     "none": "the goal did not ask to find or read information; there is no value to report",
                                 },
@@ -705,6 +777,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             units,
                             "as the answer the goal asked for -- only if the goal asked to find or read information",
                             trace=answer_trace,
+                            prefilter=prefilter_for("the answer the goal asked for"),
                         )
                     if got:
                         log["answer"] = {"text": got["text"], "context": got["unit"][:200]}
@@ -827,7 +900,13 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                         for attempt_copy in range(2):
                             rounds_trace = []
                             got = collapse_pick(
-                                jev, {**base, "state": obs}, units, purpose, exclude=bad_pieces, trace=rounds_trace
+                                jev,
+                                {**base, "state": obs},
+                                units,
+                                purpose,
+                                exclude=bad_pieces,
+                                trace=rounds_trace,
+                                prefilter=prefilter_for(wanted),
                             )
                             if not got:
                                 attempts_trace.append(
@@ -879,6 +958,8 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             bad_pieces.append(got["text"])
                             got = None
                     if attempts_trace or wanted_probs:
+                        # `units` is the whole haystack the collapse picked from, kept in full so a run log can be
+                        # replayed offline (e.g. to test a pre-filter over the page text against what was picked).
                         emit(
                             "copy_trace",
                             step=step,
@@ -886,6 +967,8 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             wanted_probs=wanted_probs,
                             attempts=attempts_trace,
                             threshold=verify_t,
+                            units=units,
+                            picked_unit=got["unit"] if got else None,
                         )
                     if got:
                         if got["text"] in {v["text"] for v in copied.values()}:
