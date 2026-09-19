@@ -7,8 +7,8 @@ Jev is scripted to pick a "Place order" button and to call it risky. The gate de
 from __future__ import annotations
 
 import pytest
-from tests.fake_jev import FakeJev
 
+from fake_jev import FakeJev  # noqa: E402  (tests/ is on sys.path via conftest)
 from jevonly import envs
 from jevonly.core import keyboard as keyboard_module
 from jevonly.core import loop as loop_module

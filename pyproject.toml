@@ -25,9 +25,9 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/buluoray/jevonly"
-Repository = "https://github.com/buluoray/jevonly"
-Issues = "https://github.com/buluoray/jevonly/issues"
+Homepage = "https://github.com/buluoray/JevOnly"
+Repository = "https://github.com/buluoray/JevOnly"
+Issues = "https://github.com/buluoray/JevOnly/issues"
 
 [project.optional-dependencies]
 dev = [
