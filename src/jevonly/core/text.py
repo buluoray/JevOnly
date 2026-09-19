@@ -29,7 +29,7 @@ def goal_spans(goal, limit=20):
     return out[:limit]
 
 
-def goal_clauses(goal, limit=10):
+def goal_clauses(goal, limit=16):
     """The goal cut into its clauses, verbatim, at punctuation and at 'then' / 'and': the things a goal asks
     for, one per piece ("note its height in meters"). The options for WHICH value a copy is after. A copy
     that did not know what it was looking for took the year a tower was completed for its height."""

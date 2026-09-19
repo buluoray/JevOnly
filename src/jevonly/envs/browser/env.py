@@ -245,6 +245,24 @@ class BrowserEnv:
                     "desc": "copy a value shown on this page -- text a later step needs, to type into a field or to report as the result; changes nothing on the page",
                 }
             )
+        prev = self._url_stack[-1][0] if self._url_stack else None
+        if prev and prev.split("#", 1)[0] != self._snap["url"].split("#", 1)[0]:
+            # The browser's Back button, as a choice. Undo is the loop's tool for a wrong move; a goal that
+            # says "return to the search results" needs going back to be a move the model can PICK. Without
+            # it, on an Amazon product page the model clicked the site logo (home, not the results), was
+            # undone twice, and the run died on none-led plans with three values still unread.
+            out.append(
+                {
+                    "id": "back",
+                    "idx": -1,
+                    "kind": "back",
+                    "target_key": "back",
+                    "needs_commit": False,
+                    "side_effect": "navigation",
+                    "fam": "back",
+                    "desc": f"go back to the previous page (the browser's Back button): {prev.split('?', 1)[0][:90]}",
+                }
+            )
         if any(c.get("role") == "scroll" for c in self._snap["candidates"]):
             # Ctrl+F: the page continues off screen, so offer scrolling straight to a text -- a piece of the
             # goal or a copied value -- instead of paging. The option-binding question picks which text.
@@ -298,6 +316,12 @@ class BrowserEnv:
 
     def act(self, cand, value=None, kind=None):
         self._url_stack.append((self._snap["url"], self._form_state()))
+        if (kind or cand["kind"]) == "back":
+            # the frame pushed above is the page we are leaving; undo pops it and comes back to it
+            r = self._cmd(cmd="back")
+            self.last_settled = None
+            self.last_action_note = f"went back to {str(r.get('url', ''))[:80]}"
+            return
         if (kind or cand["kind"]) == "scroll":
             value = cand.get("scroll_dir", "down")
         try:
