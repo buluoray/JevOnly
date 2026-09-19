@@ -60,6 +60,28 @@ async function settle(page, tracker, actionStartedAt, floorMs, capMs, now = Date
 }
 
 /** Browser actions and state shared by the JSON-lines protocol. */
+
+/**
+ * First line of a Playwright error plus the reason from its call log ("element is not stable",
+ * "<div> intercepts pointer events", "waiting for element to be visible"): the bare "Timeout 3500ms
+ * exceeded" said nothing about why a visible menu option would not take a click.
+ */
+function describeActionError(error) {
+  const text = String(error.message || error);
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const head = (lines[0] || '').slice(0, 120);
+  const reason = lines
+    .slice(1)
+    .filter((l) =>
+      /not stable|intercepts pointer|not visible|outside of the viewport|waiting for|not enabled|detached/i.test(l),
+    )
+    .pop();
+  return reason ? `${head} (${reason.replace(/^-\s*/, '').slice(0, 120)})` : head.slice(0, 160);
+}
+
 class BrowserActions {
   /** @param {object} environment result from launchBrowser */
   constructor(environment) {
@@ -229,8 +251,30 @@ class BrowserActions {
           if (inPopup) {
             await this.page.waitForTimeout(400);
             if ((await locator.count()) === 0) throw error;
-            await locator.first().click({ timeout: 3500 });
-            recovered = 'waited';
+            try {
+              await locator.first().click({ timeout: 3500 });
+              recovered = 'waited';
+            } catch (again) {
+              // Still timing out inside the popup: Playwright's actionability check (stable, receives
+              // pointer events) keeps failing while the option is plainly on screen -- on a Mac the
+              // "One way" option timed out twice, was rejected at that state, and the run died with the
+              // menu still open. The element is the one the model chose and it is in the open popup, so
+              // skip the check: a forced click, then a synthetic click as the last resort.
+              if (
+                !/Timeout|intercepts pointer events|not visible|outside of the viewport/i.test(
+                  String(again.message || again),
+                )
+              )
+                throw again;
+              if ((await locator.count()) === 0) throw again;
+              try {
+                await locator.first().click({ force: true, timeout: 2000 });
+                recovered = 'forced';
+              } catch (forcedError) {
+                await locator.first().dispatchEvent('click');
+                recovered = 'dispatched';
+              }
+            }
           } else {
             await this.page.keyboard.press('Escape').catch(() => null);
             await this.page.waitForTimeout(350);
@@ -250,9 +294,7 @@ class BrowserActions {
       await this.clearHighlight();
       return {
         ok: false,
-        error: `action failed: ${String(error.message || error)
-          .split('\n')[0]
-          .slice(0, 160)}`,
+        error: `action failed: ${describeActionError(error)}`,
       };
     }
 
@@ -446,9 +488,7 @@ class BrowserActions {
       await this.clearHighlight();
       return {
         ok: false,
-        error: `action failed: ${String(error.message || error)
-          .split('\n')[0]
-          .slice(0, 160)}`,
+        error: `action failed: ${describeActionError(error)}`,
       };
     }
     await this.page.waitForLoadState('domcontentloaded').catch(() => null);
