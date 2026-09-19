@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/buluoray/jevonly/security/advisories/new
+    url: https://github.com/buluoray/JevOnly/security/advisories/new
     about: Use GitHub private vulnerability reporting for security-sensitive reports.
