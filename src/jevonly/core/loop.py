@@ -230,6 +230,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
     asked_missing = False  # the give-up guard asked "which goal clause is still unsatisfied" (once per run)
     forced_wanted = None  # ...and the clause it named, for the copy it forces next
     copy_failed = {}  # url -> clauses for which nothing on that page was chosen; not offered for copying there again
+    offpath_undone = {}  # page (url sans query) -> candidate ids undone there for off-path; picked again = stays
 
     # Before the first step: how many values does this goal want read? One request, one noul per clause.
     # "Include nearby airports" and "stop when you can read the time" are things to do; "the price of the
@@ -520,28 +521,49 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
             rec["offpath_score"] = off
             emit("judge", step=step, done=done, offpath=off, done_asked=bool(history))
             if off >= offpath_t and last_taken is not None and not last_taken[2]:
-                if last_taken[3] == "irreversible":
+                # Where the undone action was taken, minus the query string: Amazon rewrites qid/ds on every
+                # return to the results, so the exact fingerprint never matches again and a rejection keyed
+                # by it never held. The coarse key is what lets "this action was already undone here" stick.
+                from_page = last_taken[0].split("#", 1)[0].split("?", 1)[0]
+                if last_taken[1] in offpath_undone.get(from_page, set()):
+                    # Undone once for off-path, and the planner picked the very same action again at the same
+                    # page. Two plan votes against one borderline off-path vote: the planner has the goal and
+                    # the history in view, the off-path question only the page. On Amazon the first result was
+                    # a 20W charger under a 65W goal; off-path read 0.60-0.61 on its product page, the loop
+                    # went back, and the planner re-opened it at 0.8+ -- thirteen times, until the cycle guard.
+                    rec["events"].append(
+                        f"offpath={off:.2f} but the planner re-chose this action after an undo -> staying"
+                    )
+                    emit(
+                        "note",
+                        step=step,
+                        text=f"off path reads {off:.2f}, but this is the action the planner chose again after it was "
+                        f"already undone once here -> the planner's repeated vote stands, not undoing",
+                    )
+                elif last_taken[3] == "irreversible":
                     rec["events"].append(f"offpath={off:.2f} after an irreversible action -> cannot undo, escalate")
                     log["stopped"] = "escalate_offpath_after_irreversible"
                     log["escalated"] = True
                     log["steps"].append(rec)
                     break
-                rec["events"].append("offpath -> undo, replan")
-                env.undo()
-                emit(
-                    "undo",
-                    step=step,
-                    reason=f"off the task's path ({off:.2f} >= {offpath_t}) -> undo the last action and re-plan",
-                    screenshot=shot(),
-                )
-                if history and history[-1].get("step") == last_taken[4]:
-                    history.pop()  # the undone action leaves the record instead of being narrated
-                rejected.setdefault(last_taken[0], {})[last_taken[1]] = 0.0
-                last_taken = None
-                log["backtracks"] = log.get("backtracks", 0) + 1
-                log["steps"].append(rec)
-                step += 1
-                continue
+                else:
+                    rec["events"].append("offpath -> undo, replan")
+                    env.undo()
+                    emit(
+                        "undo",
+                        step=step,
+                        reason=f"off the task's path ({off:.2f} >= {offpath_t}) -> undo the last action and re-plan",
+                        screenshot=shot(),
+                    )
+                    if history and history[-1].get("step") == last_taken[4]:
+                        history.pop()  # the undone action leaves the record instead of being narrated
+                    rejected.setdefault(last_taken[0], {})[last_taken[1]] = 0.0
+                    offpath_undone.setdefault(from_page, set()).add(last_taken[1])
+                    last_taken = None
+                    log["backtracks"] = log.get("backtracks", 0) + 1
+                    log["steps"].append(rec)
+                    step += 1
+                    continue
             if not cands:
                 log["steps"].append(rec)
                 log["stopped"] = "no_candidates"

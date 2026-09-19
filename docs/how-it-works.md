@@ -59,12 +59,13 @@ A timeout or missing acknowledgment is explicitly not proof. The loop escalates 
 
 The Node snapshot contains visible, enabled interactive controls. Python describes each using role, accessible name, context, current value, selectable options, checked/expanded state, and modal scope. It also adds:
 
-| Synthetic choice | When offered                                                   | Effect                                                               |
-| ---------------- | -------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `copy`           | The page exposes text.                                         | Reads a page value into the fact register without changing the page. |
-| `scroll up/down` | Viewport mode detects more content.                            | Moves by about 80% of the viewport.                                  |
-| `find`           | A goal span, useful goal word, or fact could occur off screen. | Finds and centers page text, like Ctrl+F.                            |
-| `none`           | Always in an action vote.                                      | Signals completion or inability to advance.                          |
+| Synthetic choice | When offered                                                   | Effect                                                                                                                 |
+| ---------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `copy`           | The page exposes text.                                         | Reads a page value into the fact register without changing the page.                                                   |
+| `scroll up/down` | Viewport mode detects more content.                            | Moves by about 80% of the viewport.                                                                                    |
+| `find`           | A goal span, useful goal word, or fact could occur off screen. | Finds and centers page text, like Ctrl+F.                                                                              |
+| `none`           | Always in an action vote.                                      | Signals completion or inability to advance.                                                                            |
+| `back`           | The previous page differs from this one.                       | The browser's Back button, as a choice: "return to the search results" is a move the model can pick, not only an undo. |
 
 ### Goal values
 
@@ -79,7 +80,7 @@ The model selects from those exact substrings. A field can also use a caller-sup
 
 ### Copy values
 
-Before copying, the goal is split into at most 10 clauses at punctuation and at `and`/`then`. Jev first chooses which clause still needs a page value. Page text is then narrowed in repeated closed votes:
+Before copying, the goal is split into at most 16 clauses at punctuation and at `and`/`then`. Jev first chooses which clause still needs a page value. Page text is then narrowed in repeated closed votes:
 
 1. Build units from page text, control values, and row/list/table context.
 2. Group units into at most 10 consecutive, roughly equal parts.
