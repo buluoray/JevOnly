@@ -187,17 +187,23 @@
     return cv;
   }
   let pendingB64 = null,
-    painting = false;
+    painting = false,
+    stageGen = 0; // bumped by Clear: a frame still decoding from before it must not repaint the stage
   function paintB64(b64) {
     pendingB64 = b64;
     if (painting) return; // the newest frame wins; older pending ones are dropped
     painting = true;
+    const gen = stageGen;
     requestAnimationFrame(async () => {
       const cur = pendingB64;
       pendingB64 = null;
       try {
         const bytes = Uint8Array.from(atob(cur), (c) => c.charCodeAt(0));
         const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/jpeg' }));
+        if (gen !== stageGen) {
+          bmp.close();
+          throw new Error('stale frame');
+        }
         const cv = stageCanvas(),
           ctx = cv.getContext('2d');
         // letterbox anything that is not the stage's own aspect (step screenshots are 1280x900, same ratio)
@@ -1861,6 +1867,8 @@
     $('s-el').textContent = '0s';
     $('s-answer-row').hidden = true;
     $('s-answer').textContent = '';
+    stageGen += 1;
+    pendingB64 = null;
     shot.innerHTML = SHOT_EMPTY;
     $('url').textContent = '–';
     setStatus('', 'idle');
