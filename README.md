@@ -2,6 +2,10 @@
 
 **Pure Jev that can "type" and drive towards task completion.** No LLM anywhere: code builds every option from the page and the goal, [Jev](https://typesafe.ai) only picks — and that is enough to fill forms, type, and finish the task.
 
+![Google Flights: one-way Boston to Paris CDG, premium economy, Air France only](docs/assets/demo-google-flights.gif)
+
+![Wikipedia: the tallest building in Seattle and in Portland, heights in meters](docs/assets/demo-wikipedia.gif)
+
 ```bash
 git clone https://github.com/buluoray/JevOnly.git && cd JevOnly && ./run.sh
 ```
@@ -23,11 +27,9 @@ That goal ends in about 20 steps, 80 Jev calls and 30 seconds with the answer `2
 
 ## Demo
 
-Google Flights: one-way Boston to Paris CDG, premium economy, Air France only. Every keystroke, click and copy is a Jev vote over options the code built.
+The recordings above, in full quality (click to play):
 
 https://github.com/user-attachments/assets/4f21c5ab-c840-46dc-9337-0de8c4a16df6
-
-Wikipedia: the tallest building in Seattle and in Portland, heights in meters.
 
 https://github.com/user-attachments/assets/11ad01fc-4a23-4091-b3d6-d8129c88c694
 
