@@ -21,6 +21,16 @@ jevonly run --start https://en.wikipedia.org \
 
 That goal ends in about 20 steps, 80 Jev calls and 30 seconds with the answer `286; 166`.
 
+## Demo
+
+Google Flights: one-way Boston to Paris CDG, premium economy, Air France only. Every keystroke, click and copy is a Jev vote over options the code built.
+
+https://github.com/user-attachments/assets/4f21c5ab-c840-46dc-9337-0de8c4a16df6
+
+Wikipedia: the tallest building in Seattle and in Portland, heights in meters.
+
+https://github.com/user-attachments/assets/11ad01fc-4a23-4091-b3d6-d8129c88c694
+
 ## How it works
 
 No planner model, no helper LLM, no free text. Every step is a closed question to Jev over options the
