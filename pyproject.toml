@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 [project]
 name = "jevonly"
 version = "0.1.0"
-description = "A browser agent whose every step is a closed vote."
+description = "Pure Jev that can \"type\" and drive towards task completion."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
