@@ -211,15 +211,33 @@ class BrowserActions {
     try {
       if (command.action === 'click') {
         try {
-          await locator.first().click({ timeout: 1500 });
+          await locator.first().click({ timeout: 2000 });
         } catch (error) {
           const message = String(error.message || error);
           if (!/Timeout|intercepts pointer events|not visible|outside of the viewport/i.test(message)) throw error;
-          await this.page.keyboard.press('Escape').catch(() => null);
-          await this.page.waitForTimeout(350);
-          if ((await locator.count()) === 0) throw error;
-          await locator.first().click({ timeout: 1500 });
-          recovered = 'escape';
+          // A slow first click usually means the target is still animating into place (a menu that grows
+          // open, a dialog that fades in). Escape used to be the recovery -- but when the target sits INSIDE
+          // the open dialog, Escape closes that dialog and the option is gone: "One way" was pressed, the
+          // menu vanished, the state changed, and the loop rejected the option for good. So: inside a popup,
+          // wait and click again with more time; outside one, Escape whatever overlay is in the way first.
+          const inPopup = await locator
+            .first()
+            .evaluate((el) =>
+              Boolean(el.closest('[role=dialog],dialog,[aria-modal="true"],[role=listbox],[role=menu]')),
+            )
+            .catch(() => false);
+          if (inPopup) {
+            await this.page.waitForTimeout(400);
+            if ((await locator.count()) === 0) throw error;
+            await locator.first().click({ timeout: 3500 });
+            recovered = 'waited';
+          } else {
+            await this.page.keyboard.press('Escape').catch(() => null);
+            await this.page.waitForTimeout(350);
+            if ((await locator.count()) === 0) throw error;
+            await locator.first().click({ timeout: 2000 });
+            recovered = 'escape';
+          }
         }
       } else if (command.action === 'fill' || command.action === 'fill_enter') {
         await this.fill(locator.first(), command);
