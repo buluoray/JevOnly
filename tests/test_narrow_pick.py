@@ -1,7 +1,6 @@
 """narrow_pick: Jev shortens a stretch of the goal from either end and decides itself when to stop."""
 
-from tests.fake_jev import FakeJev
-
+from fake_jev import FakeJev  # noqa: E402  (tests/ is on sys.path via conftest)
 from jevonly.core.copy import narrow_pick
 from jevonly.core.text import goal_clauses
 
