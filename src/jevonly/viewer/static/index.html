@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JevOnly · watch the harness work</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>JevOnly <span>the harness loop, one decision at a time</span></h1>
+      <span id="status" class="pill">idle</span>
+      <div class="stats">
+        <span>step <b id="s-step">–</b></span>
+        <span>Jev calls <b id="s-calls">0</b></span>
+        <span>tokens <b id="s-tok">0</b></span>
+        <span>est. cost <b id="s-cost">$0.0000</b></span>
+        <span>elapsed <b id="s-el">0s</b></span>
+        <span id="s-answer-row" hidden>answer <b id="s-answer" style="color: var(--ok)"></b></span>
+      </div>
+      <div class="hbtn">
+        <button
+          id="copy"
+          type="button"
+          disabled
+          title="Every event of this run as a plain-text transcript, including each Jev question, answer and the state it saw. Screenshots are noted, not included."
+        >
+          Copy all logs</button
+        ><button id="dl" type="button" disabled title="The same events as JSON, one object per line">
+          Download .jsonl</button
+        ><button
+          id="clear"
+          type="button"
+          disabled
+          title="Clear the run log, the screenshots and the replay bar. The form on the left is kept."
+        >
+          Clear
+        </button>
+      </div>
+    </header>
+    <div id="toast" class="toast"></div>
+    <main>
+      <aside>
+        <form id="f" autocomplete="off" onsubmit="return false;">
+          <label for="goal">Goal (natural language)</label>
+          <textarea
+            id="goal"
+            placeholder="e.g. In the TodoMVC app, add the three tasks listed in the facts (in order), then mark the second one as completed."
+          ></textarea>
+          <label for="start">Target page (public URL)</label>
+          <input id="start" type="url" placeholder="https://demo.playwright.dev/todomvc/" />
+          <label>Facts the agent may type <span style="color: var(--muted)">(optional)</span></label>
+          <div id="fact-rows"></div>
+          <button type="button" id="fact-add" class="fact-add">+ Add a fact</button>
+          <textarea id="facts" hidden></textarea>
+          <div class="hint">
+            A name on the left, the exact text to type on the right (e.g. <code>destination</code> →
+            <code>Shanghai PVG</code>). When a field must be filled, Jev picks WHICH fact to use; it never invents a
+            value. Leave empty if the goal needs no typing.
+          </div>
+          <label
+            class="chk"
+            style="display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--fg); font-size: 12.5px"
+            ><input id="kb" type="checkbox" checked style="width: auto" /> Keyboard mode</label
+          >
+          <div class="hint">
+            When no fact fits a text field, Jev spells the value from the goal one key per judgment (a-z, 0-9, space,
+            backspace, ←/→ to move the caret, done), sees the field text with the caret marked as | and the site's
+            suggestions as it types, and stops without pressing Enter so it can pick a suggestion on the next step.
+          </div>
+          <label
+            class="chk"
+            style="display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--fg); font-size: 12.5px"
+            ><input id="vp" type="checkbox" style="width: auto" /> Viewport only</label
+          >
+          <div class="hint">
+            Jev sees only what is on screen (controls and text), like a person would, and scrolling is an action it can
+            choose. Smaller state per step, more steps on long pages.
+          </div>
+          <label
+            class="chk"
+            style="display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--fg); font-size: 12.5px"
+            ><input id="headed" type="checkbox" style="width: auto" /> Show the browser window</label
+          >
+          <div class="hint">
+            Opens a real Chrome window on this machine instead of running headless. With the persistent profile this is
+            the way past a bot check: solve it once by hand in that window, and later runs carry the cookies. Do not
+            touch the window while a run is in progress.
+          </div>
+          <label>Completion check owned by code <span style="color: var(--muted)">(optional, recommended)</span></label>
+          <div class="check-row">
+            <select id="check-kind">
+              <option value="none">none (Jev decides)</option>
+              <option value="text">page shows text</option>
+              <option value="url_contains">URL contains</option>
+            </select>
+            <input id="check-val" type="text" placeholder="e.g. You logged out of the secure area!" disabled />
+          </div>
+          <div class="hint">
+            With a check, the loop only stops when the CODE sees it; Jev's "done" is advisory. Without one, the loop
+            stops on Jev's own signal, which measured 34/42 vs 42/42 in the report.
+          </div>
+          <div class="row">
+            <div>
+              <label for="steps">Max steps</label><input id="steps" type="number" min="1" max="60" value="25" />
+            </div>
+            <div>
+              <label for="budget">Time budget (s)</label
+              ><input id="budget" type="number" min="60" max="1800" value="600" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="cap">Elements listed per step</label
+              ><input id="cap" type="number" min="40" max="400" value="200" />
+            </div>
+            <div class="hint" style="align-self: end">
+              Controls beyond this are summarised, repeated grids last. More = fewer blind spots, more tokens.
+            </div>
+          </div>
+          <label
+            >Decision lines <span style="color: var(--muted)">(the code applies these to Jev's scores)</span></label
+          >
+          <div class="sliders">
+            <label for="t-verify"
+              ><span>accept an action when <b>did it work?</b> &ge;</span><output id="t-verify-v">0.50</output></label
+            >
+            <input id="t-verify" type="range" min="0.2" max="0.9" step="0.05" value="0.5" />
+            <label for="t-offpath"
+              ><span>undo when <b>off path?</b> &ge;</span><output id="t-offpath-v">0.60</output></label
+            >
+            <input id="t-offpath" type="range" min="0.3" max="0.95" step="0.05" value="0.6" />
+            <label for="t-done"
+              ><span>stop when <b>task complete?</b> &ge;</span><output id="t-done-v">0.70</output></label
+            >
+            <input id="t-done" type="range" min="0.4" max="0.95" step="0.05" value="0.7" />
+            <label for="t-risk"
+              ><span>call an action irreversible when <b>risk</b> &ge;</span><output id="t-risk-v">0.50</output></label
+            >
+            <input id="t-risk" type="range" min="0.1" max="0.9" step="0.05" value="0.5" />
+          </div>
+          <label for="irreversible">Irreversible actions</label>
+          <select id="irreversible">
+            <option value="ask" selected>ask me first (the run pauses until I answer)</option>
+            <option value="refuse">never perform them</option>
+            <option value="allow">perform them without asking</option>
+          </select>
+          <div class="hint">
+            An action is irreversible when Jev's risk score crosses the line above: a purchase, a submission, a
+            deletion, a message sent.
+          </div>
+          <label for="key">TypeSafe API key</label>
+          <input id="key" type="password" class="mono" placeholder="sk-…" autocomplete="off" />
+          <div class="hint">
+            Held in this page and in the local server process for the run only. Never logged, never written to disk.
+          </div>
+          <div class="btns">
+            <button id="run" class="primary" type="button">Run</button>
+            <button id="stop" class="stop" type="button" disabled>Stop</button>
+          </div>
+          <div id="err" class="err"></div>
+        </form>
+        <div class="notice">
+          Everything the loop observes (page text, element names, your goal and facts) is sent to TypeSafe's service as
+          part of each judgment.
+        </div>
+      </aside>
+
+      <section class="stage">
+        <div class="phase">
+          <span id="badge" class="badge">idle</span
+          ><span id="phase-text" class="text">Fill in a goal and a start page, then Run.</span>
+        </div>
+        <div class="approval" id="approval" hidden>
+          <span class="tag bad">irreversible</span>
+          <span id="approval-text" class="text"></span>
+          <button id="approve-allow" type="button" class="primary">Perform it</button>
+          <button id="approve-deny" type="button">Skip it</button>
+        </div>
+        <div class="shot" id="shot">
+          <div class="empty">
+            The browser appears here live (a screencast of the headless Chromium on the server) as the loop works. The
+            element about to be acted on is outlined in <span style="color: #ff3d00">orange</span>. Every score on the
+            right is one Jev question; the white tick on each bar is the decision line the code applies to it.
+          </div>
+        </div>
+        <div class="scrub" id="scrub" hidden>
+          <button id="sc-play" title="play the run at its real pace (space)" aria-label="play">▶</button>
+          <button id="sc-prev" title="previous moment (←)">◀</button>
+          <input id="sc-range" type="range" min="0" max="0" value="0" step="1" aria-label="replay position" />
+          <button id="sc-next" title="next moment (→)">▶|</button>
+          <button
+            id="sc-gif"
+            title="export the replay as an animated GIF (every recorded frame, at the run's own pace)"
+          >
+            GIF
+          </button>
+          <span class="sc-label" id="sc-label"></span>
+        </div>
+        <div class="urlbar" id="url">–</div>
+      </section>
+
+      <section class="right" id="right">
+        <div class="feed" id="feed"></div>
+        <div class="newpill" id="newpill">↓ new steps below</div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

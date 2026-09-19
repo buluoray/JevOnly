@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>JevOnly form fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>City search</h1>
+      <label for="query">Search query</label>
+      <input id="query" name="query" type="text" autocomplete="off">
+      <button id="search" type="button">Search</button>
+      <p id="result" aria-live="polite"></p>
+    </main>
+    <script>
+      const query = document.querySelector("#query");
+      const result = document.querySelector("#result");
+      document.querySelector("#search").addEventListener("click", () => {
+        result.textContent = `Search submitted for ${query.value}`;
+      });
+    </script>
+  </body>
+</html>

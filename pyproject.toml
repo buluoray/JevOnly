@@ -1,0 +1,72 @@
+[build-system]
+# Hatchling keeps the src layout and bundled browser assets explicit and compact.
+requires = ["hatchling==1.28.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jevonly"
+version = "0.1.0"
+description = "A browser agent whose every step is a closed vote."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "buluoray" }]
+keywords = ["browser", "agent", "playwright"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Internet :: WWW/HTTP :: Browsers",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/buluoray/jevonly"
+Repository = "https://github.com/buluoray/jevonly"
+Issues = "https://github.com/buluoray/jevonly/issues"
+
+[project.optional-dependencies]
+dev = [
+  "playwright==1.58.0",
+  "pytest==9.1.1",
+  "ruff==0.16.4",
+]
+
+[project.scripts]
+jevonly = "jevonly.cli:main"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/LICENSE",
+  "/NOTICE",
+  "/README.md",
+  "/package.json",
+  "/pyproject.toml",
+  "/src",
+  "/tests",
+]
+
+[tool.hatch.build.targets.wheel]
+# Package directories include their non-Python files, including js/** and viewer/static/**.
+packages = ["src/jevonly"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["e2e: requires JEVONLY_E2E=1 and an installed Chromium browser"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "SIM", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

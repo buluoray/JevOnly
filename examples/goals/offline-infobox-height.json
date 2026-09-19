@@ -1,0 +1,10 @@
+{
+  "name": "Offline infobox height extraction",
+  "goal": "Read the Harbor Tower article and stop when you can report its height in meters. Do not confuse the height with the year it was completed.",
+  "start": "http://127.0.0.1:8000/infobox.html",
+  "facts": {
+    "article": "Harbor Tower"
+  },
+  "max_steps": 8,
+  "notes": "Run scripts/serve-fixtures.py on port 8000 first. Expected outcome: copy 286 m from the Height row rather than the nearby completion year."
+}

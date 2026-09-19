@@ -1,0 +1,80 @@
+<!-- jevonly fixture: exercises checkbox state, text entry, item creation, and explicitly labeled delete actions -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Todo Fixture</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; }
+    body { margin: 0 auto; max-width: 680px; padding: 2rem; background: #f7f3ed; color: #28231d; }
+    main { background: white; border: 1px solid #d9d0c4; border-radius: 12px; padding: 1.5rem; }
+    form { display: flex; gap: .6rem; }
+    input[type="text"] { flex: 1; min-width: 0; }
+    input[type="text"], button { border: 1px solid #8b7f70; border-radius: 7px; font: inherit; padding: .65rem .75rem; }
+    button { background: #3f684f; border-color: #3f684f; color: white; cursor: pointer; }
+    button.delete { background: white; border-color: #a34141; color: #8b2020; }
+    ul { padding: 0; list-style: none; }
+    li { display: flex; align-items: center; gap: .75rem; border-top: 1px solid #e7e0d7; padding: .8rem 0; }
+    li label { flex: 1; }
+    input[type="checkbox"]:checked + span { color: #686057; text-decoration: line-through; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Project checklist</h1>
+    <form id="add-form">
+      <label for="new-item" hidden>New item</label>
+      <input id="new-item" type="text" placeholder="Add an item" autocomplete="off" required>
+      <button type="submit">Add item</button>
+    </form>
+    <p id="status" role="status" aria-live="polite">3 items</p>
+    <ul id="todo-list" aria-label="Todo items">
+      <li><label><input type="checkbox"><span>Review outline</span></label><button class="delete" type="button">Delete Review outline</button></li>
+      <li><label><input type="checkbox"><span>Publish notes</span></label><button class="delete" type="button">Delete Publish notes</button></li>
+      <li><label><input type="checkbox"><span>Archive receipts</span></label><button class="delete" type="button">Delete Archive receipts</button></li>
+    </ul>
+  </main>
+  <script>
+    const list = document.querySelector('#todo-list');
+    const input = document.querySelector('#new-item');
+    const status = document.querySelector('#status');
+
+    function updateStatus(message) {
+      status.textContent = message || `${list.children.length} items`;
+    }
+
+    function attachDelete(button) {
+      button.addEventListener('click', () => {
+        const item = button.closest('li');
+        const name = item.querySelector('span').textContent;
+        item.remove();
+        updateStatus(`Deleted ${name}. ${list.children.length} items remain.`);
+      });
+    }
+
+    list.querySelectorAll('.delete').forEach(attachDelete);
+    document.querySelector('#add-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const name = input.value.trim();
+      if (!name) return;
+      const item = document.createElement('li');
+      const label = document.createElement('label');
+      const checkbox = document.createElement('input');
+      const text = document.createElement('span');
+      const remove = document.createElement('button');
+      checkbox.type = 'checkbox';
+      text.textContent = name;
+      remove.type = 'button';
+      remove.className = 'delete';
+      remove.textContent = `Delete ${name}`;
+      label.append(checkbox, text);
+      item.append(label, remove);
+      list.append(item);
+      attachDelete(remove);
+      input.value = '';
+      updateStatus(`Added ${name}. ${list.children.length} items total.`);
+    });
+  </script>
+</body>
+</html>

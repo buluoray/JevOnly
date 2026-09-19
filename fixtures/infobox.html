@@ -1,0 +1,45 @@
+<!-- jevonly fixture: extracts a unit-bearing value from an infobox without confusing it with a nearby year -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harbor Tower — Example Encyclopedia</title>
+  <style>
+    :root { color-scheme: light; font-family: Georgia, serif; }
+    body { margin: 0 auto; max-width: 880px; padding: 2rem; color: #202122; line-height: 1.6; }
+    header { border-bottom: 1px solid #a2a9b1; margin-bottom: 1.5rem; }
+    h1 { margin-bottom: .25rem; font-weight: 500; }
+    .subtitle { color: #54595d; margin-top: 0; }
+    .infobox { border: 1px solid #a2a9b1; border-collapse: collapse; float: right; margin: 0 0 1rem 2rem; width: 320px; }
+    .infobox caption { background: #eaecf0; border: 1px solid #a2a9b1; border-bottom: 0; font-size: 1.2rem; font-weight: 700; padding: .6rem; }
+    .infobox th, .infobox td { border-top: 1px solid #eaecf0; padding: .45rem .6rem; text-align: left; vertical-align: top; }
+    .infobox th { width: 38%; }
+    @media (max-width: 620px) { .infobox { float: none; margin: 0 0 1.5rem; width: 100%; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Harbor Tower</h1>
+    <p class="subtitle">From Example Encyclopedia</p>
+  </header>
+  <main>
+    <table class="infobox" aria-label="Harbor Tower facts">
+      <caption>Harbor Tower</caption>
+      <tbody>
+        <tr><th scope="row">Location</th><td>Bay City</td></tr>
+        <tr><th scope="row">Status</th><td>Complete</td></tr>
+        <tr><th scope="row">Height</th><td>937 ft (286 m)</td></tr>
+        <tr><th scope="row">Floors</th><td>68</td></tr>
+      </tbody>
+    </table>
+    <article aria-labelledby="overview">
+      <h2 id="overview">Overview</h2>
+      <p>Harbor Tower is an office building overlooking the central waterfront. The building was completed in 1985 after four years of construction.</p>
+      <p>Its observation level occupies the upper floors, above a public lobby and a small exhibition about the harbor.</p>
+      <h2>Design</h2>
+      <p>The structure uses a tapered stone base and a steel frame. Repeating vertical windows reduce glare while keeping the interior bright.</p>
+    </article>
+  </main>
+</body>
+</html>

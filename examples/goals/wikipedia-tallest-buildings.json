@@ -1,0 +1,8 @@
+{
+  "name": "Wikipedia tallest-building comparison",
+  "goal": "Find the tallest building in Seattle on Wikipedia, note its height in meters, then find the tallest building in Portland, Oregon, and stop when you can compare the two heights.",
+  "start": "https://en.wikipedia.org",
+  "facts": {},
+  "max_steps": 28,
+  "notes": "Expected outcome: copy the metric heights for the tallest buildings in both cities and stop when they can be compared. Representative run: about 11 steps, 43 Jev calls, 340,000 tokens, $0.014, and 17 seconds."
+}

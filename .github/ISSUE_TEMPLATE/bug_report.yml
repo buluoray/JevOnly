@@ -1,0 +1,77 @@
+name: Bug report
+description: Report reproducible incorrect JevOnly behavior
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve JevOnly. Use synthetic data and redact keys, personal data, and private-site content.
+  - type: input
+    id: version
+    attributes:
+      label: JevOnly version
+      placeholder: "0.1.0 or commit SHA"
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Browser loop
+        - Command-line interface
+        - Viewer
+        - Event log or replay
+        - Packaging or installation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What closed choice or browser action should JevOnly have selected?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Include a minimal synthetic fixture or public start URL when possible.
+      placeholder: |
+        1. Run ...
+        2. Observe ...
+        3. JevOnly ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant event-log excerpt
+      description: Keep this compact and remove keys, personal data, cookies, and private page content.
+      render: text
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Python, Node.js, Playwright, browser, and operating system versions.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed API keys, credentials, personal data, and private-site content.
+          required: true
+        - label: This is not an undisclosed security vulnerability.
+          required: true

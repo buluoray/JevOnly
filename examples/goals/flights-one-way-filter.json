@@ -1,0 +1,15 @@
+{
+  "name": "One-way flight with airline filter",
+  "goal": "Find one-way flights from Boston to Paris CDG on December 5, 2026 for one adult in premium economy. Include nearby airports for the departure, show only Air France flights, and stop when you can read the departure time and price of the earliest Air France flight. Do not change the currency or the language.",
+  "start": "https://www.google.com/travel/flights",
+  "facts": {
+    "departure": "Boston",
+    "arrival": "Paris CDG",
+    "travel_date": "December 5, 2026",
+    "passengers": "one adult",
+    "cabin": "premium economy",
+    "airline": "Air France"
+  },
+  "max_steps": 40,
+  "notes": "Expected outcome: apply every requested search setting, then copy the earliest matching departure time and price. Representative run: about 21 steps, 82 Jev calls, 360,000 tokens, $0.015, and 40 seconds."
+}
