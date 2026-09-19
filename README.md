@@ -1,6 +1,6 @@
 # JevOnly
 
-**A harness that lets [Jev](https://typesafe.ai) do any task through closed votes — the code builds the options, Jev only picks.**
+**Pure Jev that can "type" and drive towards task completion.** No LLM anywhere: code builds every option from the page and the goal, [Jev](https://typesafe.ai) only picks — and that is enough to fill forms, type, and finish the task.
 
 ```bash
 git clone https://github.com/buluoray/JevOnly.git && cd JevOnly && ./run.sh
