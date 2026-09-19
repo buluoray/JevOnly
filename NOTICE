@@ -1,0 +1,6 @@
+JevOnly
+Copyright 2026 Ray Xu
+
+JevOnly calls the TypeSafe System One API (https://typesafe.ai) over HTTPS. It includes no
+software from TypeSafe. Playwright (Apache-2.0) is installed from npm at setup time and is not
+redistributed in this repository.

@@ -1,0 +1,62 @@
+name: Site stall report
+description: Report a public site where JevOnly stalls or repeats a plan
+title: "[Site]: "
+labels:
+  - site-compatibility
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Redact all personal data, private page content, cookies, and account identifiers. Never paste an API key. Use a public or synthetic reproduction whenever possible.**
+  - type: input
+    id: version
+    attributes:
+      label: JevOnly version
+      placeholder: "0.1.0 or commit SHA"
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: Provide the exact goal after replacing personal values with synthetic ones.
+    validations:
+      required: true
+  - type: input
+    id: start_url
+    attributes:
+      label: Start URL
+      description: Use a public URL. Remove query parameters that contain identifiers or sensitive values.
+      placeholder: "https://example.com/path"
+    validations:
+      required: true
+  - type: input
+    id: stalled_step
+    attributes:
+      label: Stalled step
+      description: Give the step number and the last action JevOnly attempted.
+      placeholder: "Step 7, after scroll down"
+    validations:
+      required: true
+  - type: textarea
+    id: excerpt
+    attributes:
+      label: Compact event-log excerpt
+      description: Include only the page, Jev, and code rows needed to show the stall. Redact sensitive content.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected next closed choice
+      description: Which page-derived option should have remained available?
+    validations:
+      required: true
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: Redaction confirmation
+      options:
+        - label: I removed personal data, credentials, cookies, private content, and API keys.
+          required: true

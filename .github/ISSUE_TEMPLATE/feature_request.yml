@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose a closed-choice capability for JevOnly
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        JevOnly's invariant is that code builds every option and the model only picks. Requests that require model-generated text, selectors, scripts, or URLs are out of scope.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What browser goal cannot JevOnly complete reliably today?
+    validations:
+      required: true
+  - type: textarea
+    id: choices
+    attributes:
+      label: Proposed closed choices
+      description: List the finite options code can derive and the criteria for choosing among them.
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Option source
+      description: Explain how each option comes from the page, goal, facts, or fixed code rather than generated text.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification and recovery
+      description: How can JevOnly verify success, undo failure, and avoid irreversible actions?
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Minimal example
+      description: Provide a synthetic page scenario and goal without personal data.
+  - type: checkboxes
+    id: invariant
+    attributes:
+      label: Scope check
+      options:
+        - label: The proposal keeps all text and URL construction in deterministic code.
+          required: true

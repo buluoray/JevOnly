@@ -1,0 +1,11 @@
+{
+  "name": "Offline autocomplete and date search",
+  "goal": "Search for trips to Lakeview on December 5, 2026, submit the form, and stop when you can read the earliest departure time and price.",
+  "start": "http://127.0.0.1:8000/search-form.html",
+  "facts": {
+    "destination": "Lakeview",
+    "travel_date": "December 5, 2026"
+  },
+  "max_steps": 16,
+  "notes": "Run scripts/serve-fixtures.py on port 8000 first. Expected outcome: select the autocomplete option and date, submit, then read 7:15 AM and $184 from the first result row."
+}

@@ -1,0 +1,11 @@
+{
+  "name": "Offline multistep wizard",
+  "goal": "Complete the setup wizard with Focus mode and Weekly updates, then stop when the completion confirmation is visible.",
+  "start": "http://127.0.0.1:8000/multistep.html",
+  "facts": {
+    "mode": "Focus mode",
+    "update_cadence": "Weekly updates"
+  },
+  "max_steps": 14,
+  "notes": "Run scripts/serve-fixtures.py on port 8000 first. Expected outcome: traverse all three pages, preserve both selections, and reach the completion confirmation. Back buttons provide reversible navigation for undo testing."
+}

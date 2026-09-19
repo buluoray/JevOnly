@@ -1,0 +1,140 @@
+<!-- jevonly fixture: exercises autocomplete typing, a date-picker dialog, form submission, and table value reading -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trip Search Fixture</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; }
+    body { margin: 0 auto; max-width: 900px; padding: 2rem; background: #f4f7fb; color: #172033; }
+    main { background: white; border: 1px solid #d8dfeb; border-radius: 14px; padding: 1.5rem; box-shadow: 0 10px 30px #1f33551a; }
+    form { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: end; }
+    .field { position: relative; display: grid; gap: .4rem; }
+    label { font-weight: 700; }
+    input, button { border: 1px solid #8796ae; border-radius: 8px; font: inherit; padding: .7rem .8rem; }
+    button { background: #1c5fd4; border-color: #1c5fd4; color: white; cursor: pointer; font-weight: 700; }
+    button.secondary { background: white; color: #172033; }
+    [role="listbox"] { position: absolute; z-index: 2; top: 100%; right: 0; left: 0; margin: .25rem 0 0; padding: .25rem; background: white; border: 1px solid #8796ae; border-radius: 8px; list-style: none; }
+    [role="option"] { border-radius: 5px; cursor: pointer; padding: .55rem; }
+    [role="option"]:hover, [role="option"]:focus { background: #e8f0ff; outline: none; }
+    [role="dialog"] { position: fixed; z-index: 4; inset: 50% auto auto 50%; width: min(360px, calc(100% - 3rem)); transform: translate(-50%, -50%); background: white; border: 2px solid #1c5fd4; border-radius: 12px; padding: 1rem; box-shadow: 0 18px 60px #17203355; }
+    .backdrop { position: fixed; z-index: 3; inset: 0; background: #17203366; }
+    .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: .35rem; }
+    .days button { padding: .55rem .2rem; }
+    table { width: 100%; margin-top: 1.5rem; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #d8dfeb; padding: .75rem; text-align: left; }
+    th { background: #edf3ff; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>One-way trip search</h1>
+    <form id="trip-form">
+      <div class="field">
+        <label for="destination">Destination</label>
+        <input id="destination" name="destination" role="combobox" aria-autocomplete="list" aria-controls="suggestions" aria-expanded="false" autocomplete="off" required>
+        <ul id="suggestions" role="listbox" aria-label="Destination suggestions" hidden></ul>
+      </div>
+      <div class="field">
+        <label for="travel-date">Travel date</label>
+        <input id="travel-date" name="travel-date" role="textbox" aria-haspopup="dialog" aria-controls="date-dialog" readonly required>
+      </div>
+      <button type="submit">Search trips</button>
+    </form>
+
+    <p id="status" role="status" aria-live="polite"></p>
+    <section id="results" aria-labelledby="results-heading" hidden>
+      <h2 id="results-heading">Trips to Lakeview on December 5, 2026</h2>
+      <table>
+        <thead><tr><th scope="col">Departure</th><th scope="col">Carrier</th><th scope="col">Duration</th><th scope="col">Price</th></tr></thead>
+        <tbody>
+          <tr><td>7:15 AM</td><td>Carrier Alpha</td><td>2 h 05 m</td><td>$184</td></tr>
+          <tr><td>9:40 AM</td><td>Carrier Beta</td><td>1 h 55 m</td><td>$219</td></tr>
+          <tr><td>1:20 PM</td><td>Carrier Gamma</td><td>2 h 10 m</td><td>$196</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <div id="date-backdrop" class="backdrop" hidden></div>
+  <div id="date-dialog" role="dialog" aria-modal="true" aria-labelledby="date-heading" hidden>
+    <h2 id="date-heading">Choose a date in December 2026</h2>
+    <div class="days" aria-label="December dates">
+      <button type="button" data-date="December 1, 2026">1</button>
+      <button type="button" data-date="December 2, 2026">2</button>
+      <button type="button" data-date="December 3, 2026">3</button>
+      <button type="button" data-date="December 4, 2026">4</button>
+      <button type="button" data-date="December 5, 2026" aria-label="December 5, 2026">5</button>
+      <button type="button" data-date="December 6, 2026">6</button>
+      <button type="button" data-date="December 7, 2026">7</button>
+    </div>
+    <p><button type="button" id="close-date" class="secondary">Cancel</button></p>
+  </div>
+
+  <script>
+    const destinations = ['Lakeview', 'Northport', 'Cedar Harbor'];
+    const destination = document.querySelector('#destination');
+    const suggestions = document.querySelector('#suggestions');
+    const travelDate = document.querySelector('#travel-date');
+    const dateDialog = document.querySelector('#date-dialog');
+    const dateBackdrop = document.querySelector('#date-backdrop');
+
+    function showSuggestions() {
+      const query = destination.value.trim().toLowerCase();
+      const matches = destinations.filter((name) => name.toLowerCase().includes(query));
+      suggestions.replaceChildren(...matches.map((name) => {
+        const option = document.createElement('li');
+        option.setAttribute('role', 'option');
+        option.tabIndex = 0;
+        option.textContent = name;
+        option.addEventListener('click', () => chooseDestination(name));
+        option.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') chooseDestination(name);
+        });
+        return option;
+      }));
+      suggestions.hidden = matches.length === 0;
+      destination.setAttribute('aria-expanded', String(matches.length > 0));
+    }
+
+    function chooseDestination(name) {
+      destination.value = name;
+      suggestions.hidden = true;
+      destination.setAttribute('aria-expanded', 'false');
+    }
+
+    function setDateDialog(open) {
+      dateDialog.hidden = !open;
+      dateBackdrop.hidden = !open;
+      if (open) dateDialog.querySelector('button').focus();
+      else travelDate.focus();
+    }
+
+    destination.addEventListener('input', showSuggestions);
+    destination.addEventListener('focus', showSuggestions);
+    travelDate.addEventListener('click', () => setDateDialog(true));
+    document.querySelector('#close-date').addEventListener('click', () => setDateDialog(false));
+    dateBackdrop.addEventListener('click', () => setDateDialog(false));
+    dateDialog.querySelectorAll('[data-date]').forEach((button) => {
+      button.addEventListener('click', () => {
+        travelDate.value = button.dataset.date;
+        setDateDialog(false);
+      });
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !dateDialog.hidden) setDateDialog(false);
+    });
+
+    document.querySelector('#trip-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const valid = destination.value === 'Lakeview' && travelDate.value === 'December 5, 2026';
+      document.querySelector('#results').hidden = !valid;
+      document.querySelector('#status').textContent = valid
+        ? 'Three trips found, ordered by departure time.'
+        : 'Choose Lakeview and December 5, 2026 to load this fixture.';
+    });
+  </script>
+</body>
+</html>

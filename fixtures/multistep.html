@@ -1,0 +1,101 @@
+<!-- jevonly fixture: exercises a three-page wizard with reversible Next and Back navigation -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Setup Wizard Fixture</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; }
+    body { margin: 0 auto; max-width: 720px; padding: 2rem; background: #f0f4f2; color: #183027; }
+    main { background: white; border: 1px solid #c9d8d1; border-radius: 14px; padding: 1.75rem; box-shadow: 0 12px 32px #18302718; }
+    .progress { color: #52675e; font-weight: 700; }
+    fieldset { border: 0; margin: 1.25rem 0; padding: 0; }
+    legend { font-size: 1.1rem; font-weight: 700; margin-bottom: .8rem; }
+    label { display: block; border: 1px solid #c9d8d1; border-radius: 8px; margin: .5rem 0; padding: .75rem; }
+    nav { display: flex; justify-content: space-between; gap: .75rem; margin-top: 1.5rem; }
+    button { border: 1px solid #246147; border-radius: 8px; background: #246147; color: white; cursor: pointer; font: inherit; font-weight: 700; padding: .7rem 1rem; }
+    button.secondary { background: white; color: #246147; }
+    button:disabled { cursor: not-allowed; opacity: .45; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: .65rem 1rem; }
+    dt { font-weight: 700; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Workspace setup</h1>
+    <p id="progress" class="progress">Step 1 of 3</p>
+
+    <section id="step-1" aria-labelledby="step-1-heading">
+      <h2 id="step-1-heading">Choose a mode</h2>
+      <fieldset>
+        <legend>How should the workspace behave?</legend>
+        <label><input type="radio" name="mode" value="Focus mode"> Focus mode</label>
+        <label><input type="radio" name="mode" value="Explore mode"> Explore mode</label>
+      </fieldset>
+      <nav aria-label="Step 1 controls"><span></span><button type="button" data-next disabled>Next</button></nav>
+    </section>
+
+    <section id="step-2" aria-labelledby="step-2-heading" hidden>
+      <h2 id="step-2-heading">Choose an update cadence</h2>
+      <fieldset>
+        <legend>How often should updates appear?</legend>
+        <label><input type="radio" name="cadence" value="Daily updates"> Daily updates</label>
+        <label><input type="radio" name="cadence" value="Weekly updates"> Weekly updates</label>
+      </fieldset>
+      <nav aria-label="Step 2 controls"><button type="button" class="secondary" data-back>Back</button><button type="button" data-next disabled>Next</button></nav>
+    </section>
+
+    <section id="step-3" aria-labelledby="step-3-heading" hidden>
+      <h2 id="step-3-heading">Review setup</h2>
+      <dl><dt>Mode</dt><dd id="review-mode"></dd><dt>Updates</dt><dd id="review-cadence"></dd></dl>
+      <nav aria-label="Step 3 controls"><button type="button" class="secondary" data-back>Back</button><button type="button" id="finish">Finish setup</button></nav>
+    </section>
+
+    <section id="complete" role="status" aria-labelledby="complete-heading" hidden>
+      <h2 id="complete-heading">Setup complete</h2>
+      <p>Your workspace is ready with <strong id="complete-mode"></strong> and <strong id="complete-cadence"></strong>.</p>
+    </section>
+  </main>
+  <script>
+    const steps = [document.querySelector('#step-1'), document.querySelector('#step-2'), document.querySelector('#step-3')];
+    const progress = document.querySelector('#progress');
+    let current = 0;
+
+    function selection(name) {
+      return document.querySelector(`input[name="${name}"]:checked`)?.value || '';
+    }
+
+    function showStep(index) {
+      current = index;
+      steps.forEach((step, stepIndex) => { step.hidden = stepIndex !== index; });
+      progress.textContent = `Step ${index + 1} of 3`;
+      if (index === 2) {
+        document.querySelector('#review-mode').textContent = selection('mode');
+        document.querySelector('#review-cadence').textContent = selection('cadence');
+      }
+    }
+
+    document.querySelectorAll('input[name="mode"]').forEach((radio) => {
+      radio.addEventListener('change', () => { steps[0].querySelector('[data-next]').disabled = false; });
+    });
+    document.querySelectorAll('input[name="cadence"]').forEach((radio) => {
+      radio.addEventListener('change', () => { steps[1].querySelector('[data-next]').disabled = false; });
+    });
+    document.querySelectorAll('[data-next]').forEach((button) => {
+      button.addEventListener('click', () => showStep(current + 1));
+    });
+    document.querySelectorAll('[data-back]').forEach((button) => {
+      button.addEventListener('click', () => showStep(current - 1));
+    });
+    document.querySelector('#finish').addEventListener('click', () => {
+      steps[2].hidden = true;
+      progress.hidden = true;
+      document.querySelector('#complete-mode').textContent = selection('mode');
+      document.querySelector('#complete-cadence').textContent = selection('cadence');
+      document.querySelector('#complete').hidden = false;
+    });
+  </script>
+</body>
+</html>
