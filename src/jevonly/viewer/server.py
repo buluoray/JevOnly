@@ -88,6 +88,14 @@ class Frames:
             self.n += 1
             self.cond.notify_all()
 
+    def forget(self) -> None:
+        """Drop the last frame. A viewer that connects after Clear, or for a new run, used to be handed the
+        previous run's final screen first and the stage flashed it before the new browser's first frame."""
+        with self.cond:
+            self.latest = None
+            self.n += 1
+            self.cond.notify_all()
+
     def newer_than(self, sequence: int, timeout: float) -> tuple[int, dict | None]:
         with self.cond:
             if self.n <= sequence:
@@ -423,6 +431,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return
                 RUN.running = True
             RUN.reset()
+            FRAMES.forget()
             threading.Thread(target=run_thread, args=(task, variant, key), daemon=True).start()
             self._json(
                 200,
@@ -457,6 +466,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return
             RUN.reset()
             RUN.started_at = None
+            FRAMES.forget()
             self._json(200, {"ok": True})
         else:
             self._json(404, {"error": "not found"})
