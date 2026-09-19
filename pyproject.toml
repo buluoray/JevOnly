@@ -1,6 +1,6 @@
 [build-system]
 # Hatchling keeps the src layout and bundled browser assets explicit and compact.
-requires = ["hatchling==1.28.0"]
+requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -31,9 +31,9 @@ Issues = "https://github.com/buluoray/JevOnly/issues"
 
 [project.optional-dependencies]
 dev = [
-  "playwright==1.58.0",
+  "playwright==1.63.0",
   "pytest==9.1.1",
-  "ruff==0.16.4",
+  "ruff==0.16.7",
 ]
 
 [project.scripts]
