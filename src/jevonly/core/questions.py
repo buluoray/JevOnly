@@ -364,7 +364,11 @@ def q_value_clauses(clauses):
             ),
             "criteria": {
                 "true": "It asks for a piece of information the page will show, which the agent must read and keep.",
-                "false": "It asks for something to be done (click, choose, fill, include, go to) or describes when to stop; no value is to be read for it.",
+                "false": (
+                    "It asks for something to be done (click, choose, fill, include, go to) or describes when to stop; no value is to be read for it. "
+                    "'Find X', 'open X', 'go to X', 'look up X' name a page or thing to REACH, not a value to read, even when X is a name: "
+                    "'find the tallest building in Seattle' is navigation; 'note its height' is the value."
+                ),
             },
         }
         # "stop when you can compare the two heights" names no value itself, yet cannot be met without

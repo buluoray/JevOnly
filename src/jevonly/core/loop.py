@@ -712,11 +712,20 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                                     )["answers_question"]["noul"]
                                     >= 0.5
                                 )
+                                named = "; ".join(f"`{m[:50]}`" for m in missing[:3])
                                 emit(
                                     "note",
                                     step=step,
-                                    text=f"stopping on the model's signal with {len(missing)} of {len(value_clauses)} value "
-                                    f"clause(s) never read -> register judged {'complete' if complete else 'incomplete: not a success'}",
+                                    text=(
+                                        f"Jev says done ({done:.2f}). {len(missing)} of the {len(value_clauses)} part(s) the pre-analysis "
+                                        f"marked as values have no copied value ({named}); asked whether the copied values already "
+                                        f"answer the goal -> "
+                                        + (
+                                            "yes: those parts were things to do, not values; done"
+                                            if complete
+                                            else "no: a value is missing, not a success"
+                                        )
+                                    ),
                                 )
                             log["success"] = complete
                         else:
