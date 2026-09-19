@@ -130,6 +130,21 @@ async function snapshot(page, opts = {}) {
       String(value || '')
         .trim()
         .replace(/\s+/g, ' ');
+    if (!document.body) {
+      // No body: about:blank before the first navigation, a document still being replaced, an XML or
+      // media response. createTreeWalker(null) threw here and took the whole run down; an empty page
+      // is a state the loop already knows how to handle (a wall or a page still loading).
+      return {
+        headings: [],
+        candidates: [],
+        body: '',
+        unitEntries: [],
+        total: 0,
+        modal: null,
+        omitted: 0,
+        truncatedRuns: [],
+      };
+    }
     const headings = [...document.querySelectorAll('h1,h2,h3')]
       .map((heading) => clean(heading.innerText))
       .filter(Boolean)
