@@ -4,7 +4,7 @@ JevOnly is a browser agent with a strict boundary: **the code builds the options
 
 ## Development setup
 
-JevOnly requires Python 3.12+ and Node.js 18+.
+JevOnly requires Python 3.12+ and Node.js 22+.
 
 ```sh
 python3 -m venv .venv
