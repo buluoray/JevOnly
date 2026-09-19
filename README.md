@@ -27,7 +27,7 @@ with the same loop.
 | Requirement      |              Version | Check                                         |
 | ---------------- | -------------------: | --------------------------------------------- |
 | Python           |                3.12+ | `python3 --version`                           |
-| Node.js          |                  18+ | `node --version`                              |
+| Node.js          |                  22+ | `node --version`                              |
 | npm              | bundled with Node.js | `npm --version`                               |
 | TypeSafe API key |   starts with `tsk_` | Get one at [typesafe.ai](https://typesafe.ai) |
 
