@@ -29,7 +29,7 @@ jobs:
       - name: Check distribution
         run: twine check dist/*
       - name: Upload distribution
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-distribution
           path: dist/
