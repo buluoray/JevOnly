@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 command -v node >/dev/null 2>&1 || {
-  echo "JevOnly requires Node.js 18 or newer." >&2
+  echo "JevOnly requires Node.js 22 or newer." >&2
   exit 1
 }
 command -v npm >/dev/null 2>&1 || {
@@ -12,8 +12,8 @@ command -v npm >/dev/null 2>&1 || {
   exit 1
 }
 
-node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 18 ? 0 : 1)' || {
-  echo "JevOnly requires Node.js 18 or newer; found $(node --version)." >&2
+node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' || {
+  echo "JevOnly requires Node.js 22 or newer; found $(node --version)." >&2
   exit 1
 }
 
