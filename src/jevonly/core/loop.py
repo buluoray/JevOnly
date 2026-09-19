@@ -230,7 +230,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
     asked_missing = False  # the give-up guard asked "which goal clause is still unsatisfied" (once per run)
     forced_wanted = None  # ...and the clause it named, for the copy it forces next
     copy_failed = {}  # url -> clauses for which nothing on that page was chosen; not offered for copying there again
-    offpath_undone = {}  # page (url sans query) -> candidate ids undone there for off-path; picked again = stays
+    offpath_undone = {}  # page (url sans query) -> candidate ids and destination pages undone there for off-path
 
     # Before the first step: how many values does this goal want read? One request, one noul per clause.
     # "Include nearby airports" and "stop when you can read the time" are things to do; "the price of the
@@ -525,7 +525,12 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                 # return to the results, so the exact fingerprint never matches again and a rejection keyed
                 # by it never held. The coarse key is what lets "this action was already undone here" stick.
                 from_page = last_taken[0].split("#", 1)[0].split("?", 1)[0]
-                if last_taken[1] in offpath_undone.get(from_page, set()):
+                # ...and where it led. A product card carries three links to one page (image, title,
+                # price): keyed by candidate alone, each earned its own undo and the viewer run bounced
+                # in and out of the same product three times. The destination is what was already judged.
+                dest_page = obs.get("url", "").split("#", 1)[0].split("?", 1)[0]
+                seen_here = offpath_undone.get(from_page, set())
+                if last_taken[1] in seen_here or dest_page in seen_here:
                     # Undone once for off-path, and the planner picked the very same action again at the same
                     # page. Two plan votes against one borderline off-path vote: the planner has the goal and
                     # the history in view, the off-path question only the page. On Amazon the first result was
@@ -558,7 +563,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                     if history and history[-1].get("step") == last_taken[4]:
                         history.pop()  # the undone action leaves the record instead of being narrated
                     rejected.setdefault(last_taken[0], {})[last_taken[1]] = 0.0
-                    offpath_undone.setdefault(from_page, set()).add(last_taken[1])
+                    offpath_undone.setdefault(from_page, set()).update({last_taken[1], dest_page})
                     last_taken = None
                     log["backtracks"] = log.get("backtracks", 0) + 1
                     log["steps"].append(rec)
