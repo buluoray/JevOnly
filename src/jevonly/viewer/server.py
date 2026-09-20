@@ -13,6 +13,7 @@ import threading
 import time
 import traceback
 import urllib.parse
+from contextlib import suppress
 from importlib import resources
 from pathlib import Path
 
@@ -106,18 +107,31 @@ def _serve_frames() -> None:
     server.bind(str(FRAME_SOCK))
     os.chmod(FRAME_SOCK, 0o600)
     server.listen(2)
+    previous = None
     while True:
         connection, _ = server.accept()
+        # One browser child per run, and only the newest one paints. A run that was stopped can keep
+        # its child alive for a moment (the quit is asynchronous), and two children writing into the
+        # same frame slot flickered the stage between the old start page and the new one.
+        if previous is not None:
+            with suppress(OSError):
+                previous.shutdown(socket.SHUT_RDWR)
+            with suppress(OSError):
+                previous.close()
+        previous = connection
         threading.Thread(target=_read_frames, args=(connection,), daemon=True).start()
 
 
 def _read_frames(connection: socket.socket) -> None:
-    with connection, connection.makefile("rb") as lines:
-        for line in lines:
-            try:
-                FRAMES.set(json.loads(line))
-            except json.JSONDecodeError:
-                continue
+    try:
+        with connection, connection.makefile("rb") as lines:
+            for line in lines:
+                try:
+                    FRAMES.set(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except OSError:
+        return  # the connection was cut because a newer run's child took over
 
 
 def trim_state(state: dict) -> dict:
