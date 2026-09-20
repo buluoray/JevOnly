@@ -16,6 +16,7 @@ from .questions import (
     Q_OFFPATH,
     Q_PROGRESS,
     Q_REGISTER_COMPLETE,
+    Q_REGISTER_FULL,
     Q_RISK,
     Q_VERIFY,
     Q_VERIFY3,
@@ -228,6 +229,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
     walled_hosts = set()  # sites that answered a navigation with a block page; their links are not offered again
     copy_dups = {}  # url -> duplicate copies attempted there; two withdraw the copy action on that page
     asked_missing = set()  # urls where the guard asked "which goal clause is still unsatisfied here" (once per page)
+    asked_full = set()  # urls where, with every clause holding a value, Jev was asked whether the register is complete
     forced_wanted = None  # ...and the clause it named, for the copy it forces next
     copy_failed = {}  # url -> clauses for which nothing on that page was chosen; not offered for copying there again
 
@@ -574,13 +576,42 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                 probs["copy"] = 1.0
                 rec["events"].append(f"chained copy for `{forced_wanted}`")
             page_key = obs.get("url", "")
+            if ranked[0] == "copy" and value_clauses and values_in_hand() and page_key not in asked_full:
+                # Every clause has a value and the planner wants to copy again. On the Amazon two-product
+                # goal that was a sixth copy for a clause already read, and the run walked into max_steps
+                # with all five values in hand. One question decides it: does the goal still need a value
+                # (the same clause on a further item), or is the register complete? Asked once per page.
+                asked_full.add(page_key)
+                full = jev(base, Q_REGISTER_FULL, "done")["answers_question"]["noul"]
+                if full >= 0.5:
+                    emit(
+                        "note",
+                        step=step,
+                        text=f"every value the goal asks for is in hand ({len(value_clauses)}) and Jev agrees the register is "
+                        f"complete (p={full:.2f}) though it wanted one more copy -> stopping",
+                    )
+                    rec["events"].append(f"all {len(value_clauses)} value(s) copied; register judged complete -> stop")
+                    rec.update(plan=ranked[:5], done_score=done)
+                    log["stopped"] = "values_in_hand"
+                    log["success"] = True
+                    log["steps"].append(rec)
+                    break
+                emit(
+                    "note",
+                    step=step,
+                    text=f"every clause has a value but Jev says the goal still needs one more (p={1 - full:.2f}) -> copying on",
+                )
             if (
-                ranked[0] == "none"
+                ranked[0] in ("none", "back")
                 and value_clauses
                 and not values_in_hand()
                 and copy_cand is not None
                 and page_key not in asked_missing
             ):
+                # 'back' is the same case as 'none' here: the goal says "then return to the results" and the
+                # planner reached for it on the product page BEFORE reading the price -- four times in a row
+                # on the Amazon goal, product -> back -> product, until the toggle rule caught it. Leaving a
+                # page with values unread gets the same one question first.
                 # 'none' with values still unread means "no navigation is needed here", not "nothing is
                 # left to do": on the GitHub closed-PR list and the sorted Amazon results the values were
                 # on screen, copy carried 0.15-0.19 and 'none' 0.75-0.81, and the loop either looked again
@@ -598,17 +629,19 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                         emit(
                             "note",
                             step=step,
-                            text=f"'none' leads (p={probs['none']:.2f}) but `{forced_wanted}` is still unread and this page "
+                            text=f"'{ranked[0]}' leads (p={probs[ranked[0]]:.2f}) but `{forced_wanted}` is still unread and this page "
                             f"looks like it shows it (p={w['probabilities'].get(forced_wanted, 0.0):.2f}) -> copying for it first",
                         )
-                        rec["events"].append(f"none-led with values missing: copy forced for `{forced_wanted}`")
+                        rec["events"].append(f"{ranked[0]}-led with values missing: copy forced for `{forced_wanted}`")
                         if copy_cand not in cands:
                             cands.append(copy_cand)
+                        leaving_by_none = ranked[0] == "none"
                         ranked = ["copy"] + [k for k in ranked if k not in ("none", "copy")]
                         probs["copy"] = 1.0  # code-owned choice: not subject to the noise floor below
                         # The forced copy is the last thing the code can do for the goal on this page. If
                         # 'none' leads the very next plan, that is the stop -- not the first of three more.
-                        none_streak = NONE_STREAK_K - 1
+                        if leaving_by_none:
+                            none_streak = NONE_STREAK_K - 1
             if ranked[0] == "none":
                 have_values = values_in_hand()
                 if have_values:
@@ -929,6 +962,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                                         **base,
                                         "value_copied": got["text"],
                                         "copied_from": got["unit"][:200],
+                                        "page_title": obs.get("title", ""),
                                         "wanted": wanted,
                                     },
                                     {"ok": Q_COPY_OK["answers_question"]},
