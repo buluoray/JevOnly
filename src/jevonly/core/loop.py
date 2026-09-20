@@ -390,10 +390,26 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
             # costs nothing.
             all_cands = env.candidates()
             if step == 0 and not all_cands:
-                rec["events"].append("start page exposes no actionable element -> site unavailable")
-                log["stopped"] = "site_unavailable"
-                log["steps"].append(rec)
-                break
+                # The start page may simply still be painting (domcontentloaded fires before a heavy
+                # site renders a single control). Two more looks a couple of seconds apart, then it is
+                # a wall: a bot check or an empty response, and the run stops with that in the log.
+                for _look in range(2):
+                    time.sleep(EMPTY_PAGE_WAIT_S)
+                    obs = env.observe()
+                    all_cands = env.candidates()
+                    if all_cands:
+                        break
+                if not all_cands:
+                    emit(
+                        "note",
+                        step=step,
+                        text=f"start page still exposes no control after 3 looks (title {obs.get('title')!r}, "
+                        f"{len(obs.get('visible_text') or '')} chars of text) -> site unavailable: a bot wall or an empty response",
+                    )
+                    rec["events"].append("start page exposes no actionable element -> site unavailable")
+                    log["stopped"] = "site_unavailable"
+                    log["steps"].append(rec)
+                    break
             if not all_cands and last_taken is not None:
                 # No control at all right after an action. Either the page is still rendering (heavy
                 # sites paint late) or it is a wall: a bot check, an error page, "your browser did
