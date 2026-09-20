@@ -130,6 +130,28 @@ async function snapshot(page, opts = {}) {
       String(value || '')
         .trim()
         .replace(/\s+/g, ' ');
+    const cellUnit = (cell, cleanFn) => {
+      const cellText = cleanFn(cell.innerText);
+      if (!cellText || cellText.length > 120) return null;
+      const row = cell.closest('tr,[role=row]');
+      const table = row && row.closest('table,[role=table],[role=grid],[role=treegrid]');
+      if (!row || !table) return null;
+      const cellsOf = (r) =>
+        [...r.children].filter(
+          (c) => /^(td|th)$/i.test(c.tagName) || /cell|columnheader|rowheader/.test(c.getAttribute('role') || ''),
+        );
+      const rowCells = cellsOf(row);
+      const idx = rowCells.indexOf(cell);
+      if (idx < 0 || rowCells.length < 2) return null;
+      const rows = [...table.querySelectorAll('tr,[role=row]')].filter(
+        (r) => r.closest('table,[role=table],[role=grid],[role=treegrid]') === table,
+      );
+      const headerRow = rows.find((r) => r !== row && cellsOf(r).length === rowCells.length) || null;
+      const colHeader = headerRow ? cleanFn(cellsOf(headerRow)[idx]?.innerText).slice(0, 60) : '';
+      const rowHeader = idx > 0 ? cleanFn(rowCells[0].innerText).slice(0, 60) : '';
+      const label = [rowHeader, colHeader].filter((t) => t && t !== cellText).join(' · ');
+      return label ? `${label}: ${cellText}` : null;
+    };
     if (!document.body) {
       // No body: about:blank before the first navigation, a document still being replaced, an XML or
       // media response. createTreeWalker(null) threw here and took the whole run down; an empty page
@@ -397,6 +419,19 @@ async function snapshot(page, opts = {}) {
         }
         length += value.length + 1;
         words.push(value);
+        // A table cell is a unit of its own, labelled with its row and column headers: a row of a
+        // comparison table reads "$11.99 $18.24 $39.99" and says nothing about whose price is whose,
+        // while "Price · Anker Nano 30W: $18.24" does -- and on a row-per-item table the same label
+        // gives "Columbia Center · Height (m): 286" instead of the whole row.
+        const cell = parent.closest('td,th,[role=cell],[role=gridcell]');
+        if (cell && scopeElement.contains(cell)) {
+          const labelled = cellUnit(cell, clean);
+          if (labelled) {
+            if (!blockIds.has(cell)) blockIds.set(cell, `block-${blockCounter++}`);
+            unitEntries.push({ text: value, block: blockIds.get(cell), blockText: labelled });
+            continue;
+          }
+        }
         const block = parent.closest(blockSelector);
         if (block && scopeElement.contains(block)) {
           const blockText = clean(block.innerText);

@@ -126,11 +126,19 @@ e2e('browser child handles snapshot, keyboard, and click through JSON lines', as
     '<label>Name <input aria-label="Name"></label>',
     "<button onclick=\"document.getElementById('status').textContent='clicked'\">Vote</button>",
     '<p id="status">ready</p>',
+    '<table><tr><th>Spec</th><th>Anker Nano 30W</th><th>Anker 65W</th></tr>',
+    '<tr><td>Price</td><td>$18.24</td><td>$39.99</td></tr></table>',
   ].join('');
   assert.equal((await command({ cmd: 'goto', url: `data:text/html,${encodeURIComponent(markup)}` })).ok, true);
 
   const first = await command({ cmd: 'snapshot', viewport_only: true });
   assert.equal(first.ok, true);
+  // a table cell is its own unit, labelled with its row and column headers
+  assert.ok(
+    first.snapshot.text_units.includes('Price · Anker Nano 30W: $18.24'),
+    JSON.stringify(first.snapshot.text_units),
+  );
+  assert.ok(!first.snapshot.text_units.some((u) => u.includes('$18.24 $39.99')), 'the row is not glued into one unit');
   const inputIndex = first.snapshot.candidates.findIndex((candidate) => candidate.name === 'Name');
   const buttonIndex = first.snapshot.candidates.findIndex((candidate) => candidate.name === 'Vote');
   assert.notEqual(inputIndex, -1);

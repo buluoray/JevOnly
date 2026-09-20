@@ -117,7 +117,7 @@ All arguments are optional:
 
 Success contains `snapshot` with:
 
-- `url`, `title`, `headings`, `visible_text`, `text_units`;
+- `url`, `title`, `headings`, `visible_text`, `text_units` -- the on-screen text as short units in reading order: one unit per short block (a row, a list item, a paragraph), a table cell as its own unit labelled with its row and column headers (`Price · Anker Nano 30W: $18.24`), and a bare text node otherwise;
 - `candidates`: objects with `role`, `name`, `ctx`, `tag`, and `fam`, plus applicable `hint`, `host`, `pseudo`, `value`, `placeholder`, `options`, `checked`, and `expanded` fields;
 - `dialogs`: dialogs dismissed since the prior snapshot;
 - `total_interactive`, `modal`, `omitted`, and `truncated_runs`.

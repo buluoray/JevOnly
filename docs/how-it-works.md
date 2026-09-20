@@ -116,7 +116,9 @@ These values are constants in `jevonly.core.loop`, `jevonly.core.keyboard`, and 
 | Weak done                         |  `0.35` | Minimum done score for a single strong `none` vote to stop the run.                                                                                   |
 | Irreversible action (`risk`)      |  `0.50` | An action at or above this is gated: `refuse` skips it (CLI default), `ask` waits for the operator (viewer default), `allow` performs it.             |
 | Consecutive `none` plans          |     `3` | Three `none`-led plans in a row, at any done score, is the stop; a `none`-led plan with value clauses still unread first forces one copy (see below). |
-| Candidate under a `none`-led plan |  `0.25` | Once `none` leads, an action needs at least this much of the vote to be tried; otherwise the loop looks again.                                        |
+| Candidate under a `none`-led plan |  `0.50` | Once `none` leads, the best real action must hold this share of the non-`none` vote to be tried; otherwise the loop looks again.                      |
+| Copy accepted                     |  `0.50` | The clause check on a copied value must read at least this; a reading within `0.10` under it is asked once more with the surrounding lines.           |
+| Off-path repeat margin            |  `0.15` | After an undo, the same move is undone again only when off-path clears the line by this much; under it the planner's repeated choice stands.          |
 | Next-best fallback                |  `0.02` | Alternatives below this probability are not fallbacks.                                                                                                |
 | Progress                          |  `0.25` | Below this, count an accepted step as no progress.                                                                                                    |
 | Consecutive no-progress steps     |     `3` | Reject the latest reversible action at that state and re-plan.                                                                                        |
@@ -136,15 +138,15 @@ The `start` event publishes the run-specific thresholds used by the loop so even
 
 ## Undo, retry, and escalation
 
-| Situation                                                              | Response                                                                                       |
-| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Reversible action changes the wrong state                              | Undo, refresh candidates, retry once, then reject it at that state.                            |
-| Reversible action has no effect                                        | Retry once, then try the next-best candidate.                                                  |
-| State is off path                                                      | Undo the last reversible action and withdraw it at the prior state.                            |
-| Navigation lands on an empty wall                                      | Wait twice for 1.5 seconds, go back, and stop offering links to that host for the run.         |
-| Action repeatedly returns to a known unchanged state                   | Withdraw it as a toggle after two such returns.                                                |
-| Irreversible action is unconfirmed                                     | Retry only if `not_applied >= 0.50` and the one retry allowance is unused; otherwise escalate. |
-| Every remaining action failed and the least-bad choice is irreversible | Escalate rather than force it.                                                                 |
+| Situation                                                              | Response                                                                                                                                                    |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reversible action changes the wrong state                              | Undo, refresh candidates, retry once, then reject it at that state.                                                                                         |
+| Reversible action has no effect                                        | Retry once, then try the next-best candidate.                                                                                                               |
+| State is off path                                                      | Undo the last reversible action and withdraw it at the prior state.                                                                                         |
+| Navigation lands on an empty wall                                      | Wait twice for 1.5 seconds, go back, and stop offering links to that host for the run. An open dialog with two controls (a consent prompt) is not a wall.   |
+| Action repeatedly returns to a known unchanged state                   | Withdraw it as a toggle after two such returns. "Unchanged" is the acceptance checklist when the task has one, and the size of the copy register otherwise. |
+| Irreversible action is unconfirmed                                     | Retry only if `not_applied >= 0.50` and the one retry allowance is unused; otherwise escalate.                                                              |
+| Every remaining action failed and the least-bad choice is irreversible | Escalate rather than force it.                                                                                                                              |
 
 ## Completion modes
 
@@ -166,6 +168,12 @@ five minutes of silence in the viewer) counts as no.
 A `none`-led plan while value clauses are still unread means "no navigation is needed here", not "nothing is left to do": on a results page the values are on screen and `copy` polls a fraction of the vote. So the first `none`-led plan on a page asks Jev which unread clause this page could answer and, when one is named, forces a copy for it before anything else -- whatever the strength of `none`. The question is asked once per page; a clause for which nothing was chosen there is not offered on that page again, but the guard may ask once more for the remaining clauses (the rating failed twice on the Amazon results while the price beside it was never asked for).
 
 After a value is copied, the loop asks once more which clause this page can still answer and, when one is named with confidence, copies for it on the very next plan -- the price beside the time is read without waiting for three `none`-led plans. That chained copy outranks a weak stop: on the closed-PR list the number was copied, the title named next, and the following `none`-led plan would otherwise have ended the run with the title never read.
+
+## One page, one register
+
+Every per-page memo -- the guard's once-per-page question, clauses that yielded nothing on a page, duplicate copies, off-path undos -- is keyed by `page_key(url)`: the URL without its query string (results pages rewrite it on every visit) and without its fragment, except a hash route (`#/orders/12`), which is the page. The exact state, text and all, is the fingerprint, and it keys what is about the state: actions rejected there, visits.
+
+The copy register is keyed by (clause, page). A clause is not offered again on the page that already answered it, and it is offered on every other page: "note its height in meters" is read once on Seattle's article and once on Portland's, "note its star rating" once per product. The same text is a duplicate only for the same clause on the same page -- two products can both rate 4.5. A copy forced by a guard belongs to the page it was named on and is dropped when the next observation is another page.
 
 ## How many values does the goal want?
 
