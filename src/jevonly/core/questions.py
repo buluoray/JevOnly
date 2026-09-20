@@ -432,6 +432,22 @@ def q_goal_clause(clauses, purpose):
     }
 
 
+Q_REGISTER_FULL = {
+    "answers_question": {
+        "type": "noul",
+        "instructions": (
+            "An agent pursuing `task_goal` has copied a value for EVERY goal clause that asks for one: `facts` holds them "
+            "(copied_N), each with the clause it was read for. It now wants to copy yet another value. Does the goal still "
+            "need one more value to be read -- the same clause applying to a second item not yet covered -- or does the "
+            "register already hold everything the goal asked to read, so the run is complete?"
+        ),
+        "criteria": {
+            "true": "Complete: every value the goal names is in `facts`; another copy would only repeat or add something the goal did not ask for.",
+            "false": "Not yet: the goal asks the same clause of a further item (a second product, a second city) whose value is not in `facts`.",
+        },
+    }
+}
+
 Q_REGISTER_COMPLETE = {
     "answers_question": {
         "type": "noul",
