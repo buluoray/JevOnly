@@ -417,9 +417,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except (ValueError, json.JSONDecodeError) as exc:
                 self._json(400, {"error": str(exc)})
                 return
+            # A previous run may still be winding down: Stop only raises a flag the loop reads between
+            # steps, and a step can sit in a page load for seconds. Run used to answer 409 in that
+            # window with a one-line error, and the old run's frames (its old start URL) kept showing
+            # -- which read as "the new URL was ignored". Ask it to stop and give it up to ten seconds.
+            if RUN.running:
+                RUN.stop_flag = True
+                deadline = time.time() + 10
+                while RUN.running and time.time() < deadline:
+                    time.sleep(0.1)
             with RUN.lock:
                 if RUN.running:
-                    self._json(409, {"error": "a run is already in progress; stop it first"})
+                    self._json(409, {"error": "the previous run is still stopping; try again in a few seconds"})
                     return
                 RUN.running = True
             RUN.reset()
