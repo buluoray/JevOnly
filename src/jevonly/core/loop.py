@@ -16,6 +16,7 @@ from .questions import (
     Q_OFFPATH,
     Q_PROGRESS,
     Q_REGISTER_COMPLETE,
+    Q_REGISTER_FULL,
     Q_RISK,
     Q_VERIFY,
     Q_VERIFY3,
@@ -35,8 +36,11 @@ MAX_BACKTRACKS = 12
 MAX_VISITS = 8
 STALL_K = 4
 EMPTY_PAGE_WAIT_S = 1.5
-NONE_LED_FLOOR = 0.25
+NONE_LED_FLOOR = 0.5  # under a none-led plan the best real action must hold this share of the non-none mass
 NEXT_BEST_FLOOR = 0.02
+COPY_OK_T = 0.5  # a copied value is stored when the clause check reads at least this
+COPY_OK_BAND = 0.1  # ...and a reading this far under the line is asked once more with the lines around it
+OFFPATH_REPEAT_MARGIN = 0.15  # after one undo, off-path must clear the line by this much to undo the same move again
 MAX_FEEDBACK = 2
 VARIANTS = {
     "std": {"consequences": True},
@@ -123,6 +127,19 @@ def wrong_value(task, right):
         if isinstance(v, str) and v != right and 1 <= len(v) <= 40:
             return v
     return "wrong value 123"
+
+
+def page_key(url):
+    """One notion of "this page" for every per-page memo: the URL without its query string and fragment.
+    Query strings churn on every visit to a results page (Amazon rewrites qid/ds), so a memo keyed by the
+    full URL never matched again; a hash-routed app (`#/orders/12`) keeps its route, since there the
+    fragment IS the page. The exact state -- text and all -- is the fingerprint, a different thing."""
+    url = url or ""
+    base, _, frag = url.partition("#")
+    base = base.split("?", 1)[0]
+    if frag.startswith("/") or frag.startswith("!"):
+        return f"{base}#{frag.split('?', 1)[0]}"
+    return base
 
 
 def run_task(task, variant="std", rep=0, on_event=None, stop=None):
@@ -226,11 +243,15 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
     kb_typed = {}  # target_key -> values typed there and accepted, in order (a reused search box)
     copied = {}  # copied_N -> {"text", "unit", ...}: values read off pages, also entered into task["facts"]
     walled_hosts = set()  # sites that answered a navigation with a block page; their links are not offered again
-    copy_dups = {}  # url -> duplicate copies attempted there; two withdraw the copy action on that page
-    asked_missing = set()  # urls where the guard asked "which goal clause is still unsatisfied here" (once per page)
-    forced_wanted = None  # ...and the clause it named, for the copy it forces next
-    copy_failed = {}  # url -> clauses for which nothing on that page was chosen; not offered for copying there again
-    offpath_undone = {}  # page (url sans query) -> candidate ids undone there for off-path; picked again = stays
+    # Every per-page memo below is keyed by page_key(url); the exact state is `fp`.
+    copy_dups = {}  # page -> duplicate copies attempted there; two withdraw the copy action on that page
+    asked_missing = set()  # pages where the guard asked "which goal clause is still unsatisfied here" (once per page)
+    asked_full = set()  # pages where, with every clause holding a value, Jev was asked whether the register is complete
+    forced_wanted = None  # the clause a guard named for the copy it forces next...
+    forced_page = None  # ...and the page it was named on: a forced copy does not travel to another page
+    copy_failed = {}  # page -> clauses for which nothing on that page was chosen; not offered for copying there again
+    copied_on = {}  # page -> clauses that already have a value read on that page (the (clause, page) register)
+    offpath_undone = {}  # page -> candidate ids and destination pages undone there for off-path
 
     # Before the first step: how many values does this goal want read? One request, one noul per clause.
     # "Include nearby airports" and "stop when you can read the time" are things to do; "the price of the
@@ -264,14 +285,15 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
             ),
         )
 
-    def open_clauses(url):
+    def open_clauses(pk):
         """Goal clauses worth asking about on this page: the value clauses (every clause when none was flagged),
-        minus those shown to hold no value here. A clause that already has a value stays offered: "note its
-        height in meters" collects Seattle's height AND Portland's -- dropping it after the first left the
-        Portland list page with only the name clause to copy for, and the second height was never read.
-        The same value twice is deduplicated where it is stored."""
+        minus those shown to hold no value here and minus those already read HERE. The register is keyed by
+        (clause, page): "note its height in meters" is read once on Seattle's page and once on Portland's,
+        and "note its star rating" once per product page -- while the clause is not offered a second time
+        on the page that already answered it."""
         pool = value_clauses or all_clauses
-        return [c for c in pool if c not in copy_failed.get(url, set())]
+        taken = copy_failed.get(pk, set()) | copied_on.get(pk, set())
+        return [c for c in pool if c not in taken]
 
     def values_in_hand():
         return bool(value_clauses) and all(c in {v.get("wanted") for v in copied.values()} for c in value_clauses)
@@ -323,6 +345,14 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
             obs = env.observe()
             fp = env.fingerprint(obs)
             prev_url, last_url = last_url, obs.get("url") or ""
+            pk = page_key(last_url)
+            if forced_wanted and forced_page != pk:
+                # A clause named for a copy on one page is not a copy order for the next: when the copy
+                # candidate was missing on that page the order survived and forced a copy elsewhere.
+                emit(
+                    "note", step=step, text=f"the copy forced for `{forced_wanted}` belonged to another page -> dropped"
+                )
+                forced_wanted = forced_page = None
             emit(
                 "observe",
                 step=step,
@@ -340,8 +370,12 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
             # reopening a page you have been on returns to a known state too, but it happens either
             # side of real work, so the code-owned acceptance checklist changes across it. A model
             # opinion (`progress`) cannot play this role -- it called reopening a dialog progress.
+            # "Nothing the goal requires has moved" is the acceptance checklist when the task has one,
+            # and the size of the copy register otherwise -- a run without a code check has an empty
+            # checklist, and an always-equal signature made every return to a known page a toggle,
+            # withdrawing `back` on a goal that says "then return to the results".
             if last_taken and visits.get(fp, 0) >= 1:
-                sig = tuple(env.acceptance(obs)) if hasattr(env, "acceptance") else ()
+                sig = (tuple(env.acceptance(obs)) if hasattr(env, "acceptance") else (), len(copied))
                 aid = last_taken[1]
                 if sig == accept_sig_at.get(aid, object()):
                     revisits[aid] = revisits.get(aid, 0) + 1
@@ -438,7 +472,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                     rec["events"].append("no controls after action -> undo, withdraw, replan")
                     h_now = (urllib.parse.urlsplit(obs.get("url") or "").hostname or "").removeprefix("www.")
                     h_prev = (urllib.parse.urlsplit(prev_url or "").hostname or "").removeprefix("www.")
-                    if h_now and h_now != h_prev and h_now not in walled_hosts:
+                    if h_now and h_now != h_prev and h_now not in walled_hosts and not obs.get("open_dialog"):
                         walled_hosts.add(h_now)
                         emit(
                             "note",
@@ -463,7 +497,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
             dead = rejected.get(fp, {})
             if walled_hosts:
                 all_cands = [c for c in all_cands if c.get("host") not in walled_hosts]
-            if copy_dups.get(obs.get("url", ""), 0) >= 2:
+            if copy_dups.get(pk, 0) >= 2:
                 all_cands = [c for c in all_cands if c["id"] != "copy"]
             # a chained copy (decided right after the previous copy) is offered even though copying was
             # already used once on this page state
@@ -540,21 +574,30 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                 # Where the undone action was taken, minus the query string: Amazon rewrites qid/ds on every
                 # return to the results, so the exact fingerprint never matches again and a rejection keyed
                 # by it never held. The coarse key is what lets "this action was already undone here" stick.
-                from_page = last_taken[0].split("#", 1)[0].split("?", 1)[0]
-                if last_taken[1] in offpath_undone.get(from_page, set()):
+                from_page = page_key(last_taken[0])
+                # ...and where it led. A product card carries three links to one page (image, title,
+                # price): keyed by candidate alone, each earned its own undo and the viewer run bounced
+                # in and out of the same product three times. The destination is what was already judged.
+                dest_page = pk
+                seen_here = offpath_undone.get(from_page, set())
+                repeat_bar = min(0.95, offpath_t + OFFPATH_REPEAT_MARGIN)
+                if (last_taken[1] in seen_here or dest_page in seen_here) and off < repeat_bar:
                     # Undone once for off-path, and the planner picked the very same action again at the same
                     # page. Two plan votes against one borderline off-path vote: the planner has the goal and
                     # the history in view, the off-path question only the page. On Amazon the first result was
                     # a 20W charger under a 65W goal; off-path read 0.60-0.61 on its product page, the loop
                     # went back, and the planner re-opened it at 0.8+ -- thirteen times, until the cycle guard.
+                    # The planner's vote is not a veto: a second off-path reading that clears the line by
+                    # OFFPATH_REPEAT_MARGIN is undone again -- a link that genuinely leads to an interstitial
+                    # reads well above the line, a borderline product page does not.
                     rec["events"].append(
-                        f"offpath={off:.2f} but the planner re-chose this action after an undo -> staying"
+                        f"offpath={off:.2f} < {repeat_bar:.2f} but the planner re-chose this action after an undo -> staying"
                     )
                     emit(
                         "note",
                         step=step,
                         text=f"off path reads {off:.2f}, but this is the action the planner chose again after it was "
-                        f"already undone once here -> the planner's repeated vote stands, not undoing",
+                        f"already undone once here and the reading is under {repeat_bar:.2f} -> the planner's repeated vote stands",
                     )
                 elif last_taken[3] == "irreversible":
                     rec["events"].append(f"offpath={off:.2f} after an irreversible action -> cannot undo, escalate")
@@ -574,7 +617,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                     if history and history[-1].get("step") == last_taken[4]:
                         history.pop()  # the undone action leaves the record instead of being narrated
                     rejected.setdefault(last_taken[0], {})[last_taken[1]] = 0.0
-                    offpath_undone.setdefault(from_page, set()).add(last_taken[1])
+                    offpath_undone.setdefault(from_page, set()).update({last_taken[1], dest_page})
                     last_taken = None
                     log["backtracks"] = log.get("backtracks", 0) + 1
                     log["steps"].append(rec)
@@ -611,14 +654,42 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                 ranked = ["copy"] + [k for k in ranked if k not in ("none", "copy")]
                 probs["copy"] = 1.0
                 rec["events"].append(f"chained copy for `{forced_wanted}`")
-            page_key = obs.get("url", "")
+            if ranked[0] == "copy" and value_clauses and values_in_hand() and pk not in asked_full:
+                # Every clause has a value and the planner wants to copy again. On the Amazon two-product
+                # goal that was a sixth copy for a clause already read, and the run walked into max_steps
+                # with all five values in hand. One question decides it: does the goal still need a value
+                # (the same clause on a further item), or is the register complete? Asked once per page.
+                asked_full.add(pk)
+                full = jev(base, Q_REGISTER_FULL, "done")["answers_question"]["noul"]
+                if full >= 0.5:
+                    emit(
+                        "note",
+                        step=step,
+                        text=f"every value the goal asks for is in hand ({len(value_clauses)}) and Jev agrees the register is "
+                        f"complete (p={full:.2f}) though it wanted one more copy -> stopping",
+                    )
+                    rec["events"].append(f"all {len(value_clauses)} value(s) copied; register judged complete -> stop")
+                    rec.update(plan=ranked[:5], done_score=done)
+                    log["stopped"] = "values_in_hand"
+                    log["success"] = True
+                    log["steps"].append(rec)
+                    break
+                emit(
+                    "note",
+                    step=step,
+                    text=f"every clause has a value but Jev says the goal still needs one more (p={1 - full:.2f}) -> copying on",
+                )
             if (
-                ranked[0] == "none"
+                ranked[0] in ("none", "back")
                 and value_clauses
                 and not values_in_hand()
                 and copy_cand is not None
-                and page_key not in asked_missing
+                and pk not in asked_missing
             ):
+                # 'back' is the same case as 'none' here: the goal says "then return to the results" and the
+                # planner reached for it on the product page BEFORE reading the price -- four times in a row
+                # on the Amazon goal, product -> back -> product, until the toggle rule caught it. Leaving a
+                # page with values unread gets the same one question first.
                 # 'none' with values still unread means "no navigation is needed here", not "nothing is
                 # left to do": on the GitHub closed-PR list and the sorted Amazon results the values were
                 # on screen, copy carried 0.15-0.19 and 'none' 0.75-0.81, and the loop either looked again
@@ -627,26 +698,28 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                 # for it now. Asked once per page; a clause that yields nothing here is not offered again
                 # (copy_failed). A copy FOR ANOTHER CLAUSE is not the copy already used on this page
                 # state, so the once-per-state memo does not apply to it.
-                asked_missing.add(page_key)
-                clauses = open_clauses(page_key)
+                asked_missing.add(pk)
+                clauses = open_clauses(pk)
                 if clauses:
                     w = jev({**base, "state": obs}, q_copy_target(clauses), "copy")["wanted"]
                     if w["choice"] != "none":
-                        forced_wanted = w["choice"]
+                        forced_wanted, forced_page = w["choice"], pk
                         emit(
                             "note",
                             step=step,
-                            text=f"'none' leads (p={probs['none']:.2f}) but `{forced_wanted}` is still unread and this page "
+                            text=f"'{ranked[0]}' leads (p={probs[ranked[0]]:.2f}) but `{forced_wanted}` is still unread and this page "
                             f"looks like it shows it (p={w['probabilities'].get(forced_wanted, 0.0):.2f}) -> copying for it first",
                         )
-                        rec["events"].append(f"none-led with values missing: copy forced for `{forced_wanted}`")
+                        rec["events"].append(f"{ranked[0]}-led with values missing: copy forced for `{forced_wanted}`")
                         if copy_cand not in cands:
                             cands.append(copy_cand)
+                        leaving_by_none = ranked[0] == "none"
                         ranked = ["copy"] + [k for k in ranked if k not in ("none", "copy")]
                         probs["copy"] = 1.0  # code-owned choice: not subject to the noise floor below
                         # The forced copy is the last thing the code can do for the goal on this page. If
                         # 'none' leads the very next plan, that is the stop -- not the first of three more.
-                        none_streak = NONE_STREAK_K - 1
+                        if leaving_by_none:
+                            none_streak = NONE_STREAK_K - 1
             if ranked[0] == "none":
                 have_values = values_in_hand()
                 if have_values:
@@ -852,7 +925,12 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                 rec["events"].append(f"none={probs['none']:.2f} but done={done:.2f}: disagree, continue with next-best")
             none_led = ranked[0] == "none"
             ranked = [k for k in ranked if k != "none"]
-            act_floor = NONE_LED_FLOOR if none_led else NEXT_BEST_FLOOR
+            # Under a none-led plan the best real action has to DOMINATE the rest, not clear a fixed number:
+            # 0.25 of the raw mass was out of reach on a 100-control page once 'none' held half of it, and
+            # trivially met on a five-control form. The share of the non-none mass is the same test on both.
+            act_floor = (
+                max(NEXT_BEST_FLOOR, NONE_LED_FLOOR * (1.0 - probs.get("none", 0.0))) if none_led else NEXT_BEST_FLOOR
+            )
             if ranked and probs.get(ranked[0], 0.0) < act_floor:
                 # 'none' had the weight and the loop did not accept it as a stop. Acting on the leftovers
                 # is acting on noise; look again instead (the revisit guard bounds how often, and the
@@ -925,11 +1003,11 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                     # it is stored. A copy that skipped both took "1985" (completed in) for a height in
                     # meters, p=0.75, and the run finished on it. Offered once per page state.
                     rejected.setdefault(fp, {})["copy"] = 0.0
-                    clauses = open_clauses(obs.get("url", ""))
+                    clauses = open_clauses(pk)
                     wanted = None
                     wanted_probs = None  # the clause question as Jev answered it, for the UI's trace
                     if forced_wanted:
-                        wanted, forced_wanted = forced_wanted, None  # decided by the give-up guard just above
+                        wanted, forced_wanted, forced_page = forced_wanted, None, None  # decided by a guard above
                     elif clauses:
                         w = jev({**base, "state": obs}, q_copy_target(clauses), "copy")["wanted"]
                         wanted = None if w["choice"] == "none" else w["choice"]
@@ -948,9 +1026,10 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                     )
                     units = page_units(obs, getattr(env, "_snap", None))
                     got = None
-                    # Values already in the register are not offered again: on the flight results the time was
-                    # re-picked three times ("already copied") and the copy was withdrawn before the price was read.
-                    bad_pieces = [v["text"] for v in copied.values()]
+                    # Values already read on THIS page are not offered again: on the flight results the time was
+                    # re-picked three times ("already copied") and the copy was withdrawn before the price was
+                    # read. A value read on another page stays available: two products can share a price.
+                    bad_pieces = [v["text"] for v in copied.values() if v.get("page") == pk]
                     attempts_trace = []  # one record per collapse attempt: rounds, result, check
                     if wanted or not clauses:
                         for attempt_copy in range(2):
@@ -971,16 +1050,37 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                                 break
                             ok = got.get("p", 0.0)
                             if ok >= verify_t and wanted:
-                                ok = jev(
-                                    {
-                                        **base,
-                                        "value_copied": got["text"],
-                                        "copied_from": got["unit"][:200],
-                                        "wanted": wanted,
-                                    },
-                                    {"ok": Q_COPY_OK["answers_question"]},
-                                    "copy",
-                                )["ok"]["noul"]
+                                check = {
+                                    **base,
+                                    "value_copied": got["text"],
+                                    "copied_from": got["unit"][:200],
+                                    "page_title": obs.get("title", ""),
+                                    "wanted": wanted,
+                                }
+                                ok = jev(check, {"ok": Q_COPY_OK["answers_question"]}, "copy")["ok"]["noul"]
+                                if COPY_OK_T - COPY_OK_BAND <= ok < COPY_OK_T:
+                                    # Just under the line on one look at one line of text: `$11.99` read 0.45 for
+                                    # "Note its price" and the clause was written off for the page. A reading in
+                                    # the band is asked once more with the lines around the value in view, and
+                                    # the second reading decides.
+                                    at = next((i for i, u in enumerate(units) if u == got["unit"]), None)
+                                    around = units[max(0, at - 2) : at + 3] if at is not None else [got["unit"]]
+                                    ok2 = jev(
+                                        {
+                                            **check,
+                                            "copied_from": got["unit"][:400],
+                                            "nearby_lines": [u[:200] for u in around],
+                                        },
+                                        {"ok": Q_COPY_OK["answers_question"]},
+                                        "copy",
+                                    )["ok"]["noul"]
+                                    emit(
+                                        "note",
+                                        step=step,
+                                        text=f"the clause check on {got['text']!r} read {ok:.2f}, just under {COPY_OK_T} -> asked once "
+                                        f"more with the surrounding lines: {ok2:.2f}",
+                                    )
+                                    ok = ok2
                             got["ok"] = ok
                             attempts_trace.append(
                                 {
@@ -989,10 +1089,10 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                                     "unit": got["unit"][:160],
                                     "p": round(got.get("p", 0.0), 3),
                                     "ok": round(ok, 3),
-                                    "accepted": ok >= verify_t,
+                                    "accepted": ok >= COPY_OK_T,
                                 }
                             )
-                            if ok >= verify_t:
+                            if ok >= COPY_OK_T:
                                 break
                             # Wrong kind of value (or a weak pick): that piece is off the last round and the collapse
                             # runs once more -- the line stays, since the right value often shares it with the wrong
@@ -1022,20 +1122,25 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             wanted=wanted,
                             wanted_probs=wanted_probs,
                             attempts=attempts_trace,
-                            threshold=verify_t,
+                            threshold=COPY_OK_T,
                             units=units,
                             picked_unit=got["unit"] if got else None,
                         )
                     if got:
-                        if got["text"] in {v["text"] for v in copied.values()}:
-                            # The same value again (the page toggles between two states and the copy is re-offered
-                            # on each): nothing new to remember. Twice on one page and the copy is withdrawn there.
-                            copy_dups[obs.get("url", "")] = copy_dups.get(obs.get("url", ""), 0) + 1
+                        if any(
+                            v["text"] == got["text"] and v.get("wanted") == wanted and v.get("page") == pk
+                            for v in copied.values()
+                        ):
+                            # The same value for the same clause on the same page again (the page toggles between
+                            # two states and the copy is re-offered on each): nothing new to remember. Twice on
+                            # one page and the copy is withdrawn there. The same text for another clause or on
+                            # another page is a different value -- two products can both rate 4.5.
+                            copy_dups[pk] = copy_dups.get(pk, 0) + 1
                             emit(
                                 "note",
                                 step=step,
-                                text=f"{got['text']!r} was already copied -> not stored again"
-                                + ("; copying is withdrawn on this page" if copy_dups[obs.get("url", "")] >= 2 else ""),
+                                text=f"{got['text']!r} was already copied here for this clause -> not stored again"
+                                + ("; copying is withdrawn on this page" if copy_dups[pk] >= 2 else ""),
                             )
                             rec["events"].append(
                                 {"attempt": attempt, "action": "copy", "outcome": "duplicate value -> skipped"}
@@ -1046,7 +1151,10 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             continue
                         key = f"copied_{len(copied) + 1}"
                         got["wanted"] = wanted
+                        got["page"] = pk
                         copied[key] = got
+                        if wanted:
+                            copied_on.setdefault(pk, set()).add(wanted)
                         task["facts"][key] = got["text"]
                         emit(
                             "copy",
@@ -1082,7 +1190,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                         # price beside the time). Ask now which clause is still unsatisfied here, and copy
                         # for it on the next plan -- rather than letting three none-led plans, a dead link
                         # and a field revisit go by before the give-up guard asks the same question.
-                        rest = [c for c in open_clauses(obs.get("url", "")) if c != wanted]
+                        rest = open_clauses(pk)  # the clause just read is off this page's offer already
                         if rest and wanted:
                             w2 = jev(
                                 {
@@ -1096,7 +1204,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             )["wanted"]
                             p2 = w2.get("probabilities", {}).get(w2["choice"], 0.0)
                             if w2["choice"] != "none" and p2 >= verify_t:
-                                forced_wanted = w2["choice"]
+                                forced_wanted, forced_page = w2["choice"], pk
                                 emit(
                                     "note",
                                     step=step,
@@ -1116,12 +1224,12 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             # "Include nearby airports" is a thing to do, not a value to read: asked three
                             # times on the results page, it sent the loop after a details button and a dead
                             # link once the values were already in hand.
-                            copy_failed.setdefault(obs.get("url", ""), set()).add(wanted)
+                            copy_failed.setdefault(pk, set()).add(wanted)
                             # ...but another clause may still be readable here: on the Amazon results the
                             # rating clause won the vote twice and failed twice while the price, right beside
                             # it, was never asked for. Let the guard ask again on this page, minus the failed
                             # clause (open_clauses drops it).
-                            asked_missing.discard(obs.get("url", ""))
+                            asked_missing.discard(pk)
                         ranked = [k for k in ranked if k != pick]
                     if not succeeded and ranked and probs.get(ranked[0], 0.0) < act_floor:
                         # the copy was the only candidate with weight; what is left is below the line 'none'
@@ -1552,7 +1660,12 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             # offer the same site's other links, and each costs two attempts and two undos.
                             host_after = urllib.parse.urlsplit(after.get("url") or "").hostname or ""
                             host_before = urllib.parse.urlsplit(obs.get("url") or "").hostname or ""
-                            if host_after and host_after != host_before and len(after.get("elements", [])) <= 2:
+                            if (
+                                host_after
+                                and host_after != host_before
+                                and len(after.get("elements", [])) <= 2
+                                and not after.get("open_dialog")  # a consent dialog with Accept/Reject is not a wall
+                            ):
                                 h = host_after.removeprefix("www.")
                                 if h not in walled_hosts:
                                     walled_hosts.add(h)

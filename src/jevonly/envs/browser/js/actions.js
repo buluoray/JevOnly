@@ -267,13 +267,15 @@ class BrowserActions {
               )
                 throw again;
               if ((await locator.count()) === 0) throw again;
-              try {
-                await locator.first().click({ force: true, timeout: 2000 });
-                recovered = 'forced';
-              } catch (forcedError) {
-                await locator.first().dispatchEvent('click');
-                recovered = 'dispatched';
-              }
+              // The forced click skips only the stability / pointer-events check. A target that is not
+              // visible or is disabled is not clicked by any means: a synthetic click on such an element
+              // would activate something the user could not, so the error stands and the loop re-plans.
+              const target = locator.first();
+              const usable =
+                (await target.isVisible().catch(() => false)) && (await target.isEnabled().catch(() => false));
+              if (!usable) throw again;
+              await target.click({ force: true, timeout: 2000 });
+              recovered = 'forced';
             }
           } else {
             await this.page.keyboard.press('Escape').catch(() => null);
