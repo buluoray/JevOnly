@@ -142,12 +142,13 @@ Q_COPY_OK = {
     "answers_question": {
         "type": "noul",
         "instructions": (
-            "An agent pursuing `task_goal` copied `value_copied` off a page line reading `copied_from`, meaning it to be the value "
-            "that `wanted` calls for. Is `value_copied` that value?"
+            "An agent pursuing `task_goal` copied `value_copied` off a page line reading `copied_from`, on the page titled "
+            "`page_title`, meaning it to be the value that `wanted` calls for. Is `value_copied` that value? When `wanted` says "
+            "'its' or 'the product's', the subject is the item this page is about."
         ),
         "criteria": {
             "true": "It is: the kind of value `wanted` asks for (what it measures or names, its unit or format), about the subject "
-            "`wanted` refers to, and complete enough to use later.",
+            "`wanted` refers to (the item the page is about, when `wanted` says 'its'), and complete enough to use later.",
             "false": "It is not: a value of another kind that shares the line, a value about a different subject on the page, a "
             "fragment of the value, or a label or heading rather than the value itself.",
         },

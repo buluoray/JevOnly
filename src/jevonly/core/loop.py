@@ -962,6 +962,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                                         **base,
                                         "value_copied": got["text"],
                                         "copied_from": got["unit"][:200],
+                                        "page_title": obs.get("title", ""),
                                         "wanted": wanted,
                                     },
                                     {"ok": Q_COPY_OK["answers_question"]},
