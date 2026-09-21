@@ -226,6 +226,7 @@ class BrowserEnv:
                     "side_effect": side,
                     "fam": c.get("fam"),
                     "value": c.get("value", ""),
+                    **({"sig": c["sig"]} if c.get("sig") else {}),
                     **({"input_type": c["input_type"]} if c.get("input_type") else {}),
                     **({"scroll_dir": c["pseudo"]} if c.get("pseudo") else {}),
                     **({"host": c["host"]} if c.get("host") else {}),
@@ -332,6 +333,7 @@ class BrowserEnv:
                 index=cand["idx"],
                 action=kind or cand["kind"],
                 value=value,
+                expect_sig=cand.get("sig"),
                 act_settle_ms=self.task.get("act_settle_ms"),
                 settle_cap_ms=self.task.get("settle_cap_ms"),
             )

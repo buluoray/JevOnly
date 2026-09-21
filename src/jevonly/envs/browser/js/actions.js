@@ -1,6 +1,7 @@
 'use strict';
 
 const net = require('net');
+const { semanticSignature } = require('./signature');
 
 const IGNORED_REQUEST_TYPES = new Set(['websocket', 'eventsource', 'ping']);
 
@@ -227,7 +228,24 @@ class BrowserActions {
     if (command.action === 'find') return this.find(command);
 
     const locator = this.page.locator(`[data-jev-cand="${command.index}"]`);
-    if ((await locator.count()) === 0) return { ok: false, error: 'stale candidate' };
+    if ((await locator.count()) === 0) return { ok: false, error: 'stale candidate: the control left the page' };
+    if (command.expect_sig) {
+      // The control is still the same DOM node, but is it still the same control? A list that re-rendered
+      // in place, a button whose label flipped, a field a script filled: the observation that chose it is
+      // gone, so the action is refused UNSENT (nothing to undo) and the loop looks again.
+      const now = await locator
+        .first()
+        .evaluate(semanticSignature)
+        .catch(() => null);
+      if (now !== null && now !== command.expect_sig) {
+        const was = String(command.expect_sig).split('|')[2] || '';
+        const is = String(now).split('|')[2] || '';
+        return {
+          ok: false,
+          error: `stale candidate: target changed since observation (was ${JSON.stringify(was.slice(0, 40))}, now ${JSON.stringify(is.slice(0, 40))})`,
+        };
+      }
+    }
     this.actionStartedAt = Date.now();
     let recovered = null;
     try {
@@ -294,6 +312,17 @@ class BrowserActions {
       }
     } catch (error) {
       await this.clearHighlight();
+      // A target that is no longer on screen when the click is attempted is the same case as a changed
+      // signature: the observation that offered it is gone (its menu closed, its list re-rendered), and
+      // nothing was sent. Say "stale" so the loop re-observes instead of verifying a no-op and holding
+      // the miss against a control that was never there to click.
+      const gone =
+        /not visible|detached|outside of the viewport/i.test(String(error.message || error)) &&
+        !(await locator
+          .first()
+          .isVisible()
+          .catch(() => false));
+      if (gone) return { ok: false, error: 'stale candidate: target is no longer visible at dispatch time' };
       return {
         ok: false,
         error: `action failed: ${describeActionError(error)}`,
@@ -543,10 +572,19 @@ class BrowserActions {
           element.style.outline = '3px solid #ff3d00';
           element.style.outlineOffset = '2px';
           element.style.boxShadow = '0 0 0 6px rgba(255,61,0,.25)';
-          try {
-            element.scrollIntoView({ block: 'center', inline: 'nearest' });
-          } catch (_error) {
-            // A detached element is harmless for a diagnostic screenshot.
+          // Scroll only a target that is off screen. This screenshot is taken right before the action, and
+          // scrolling a page with a menu open closes the menu: Google Flights' "One way" option was on
+          // screen when observed, the highlight scrolled it "into view", the menu shut, and the click that
+          // followed found nothing visible -- on every machine, in one run out of three.
+          const rect = element.getBoundingClientRect();
+          const onScreen =
+            rect.top >= 0 && rect.left >= 0 && rect.bottom <= window.innerHeight && rect.right <= window.innerWidth;
+          if (!onScreen) {
+            try {
+              element.scrollIntoView({ block: 'center', inline: 'nearest' });
+            } catch (_error) {
+              // A detached element is harmless for a diagnostic screenshot.
+            }
           }
         }, highlight)
         .catch(() => null);

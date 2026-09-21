@@ -20,6 +20,7 @@ from .questions import (
     Q_RISK,
     Q_VERIFY,
     Q_VERIFY3,
+    bind_heads,
     q_bind,
     q_commit,
     q_copy_target,
@@ -45,6 +46,8 @@ OFFPATH_REPEAT_MARGIN = 0.15  # after one undo, off-path must clear the line by 
 MAX_FEEDBACK = 2
 FORM_FILL_MIN_FIELDS = 2  # a whole-form pass is offered from two empty fields; one field is an ordinary fill
 FORM_FILL_MAX_FIELDS = 12  # fields bound per pass (one question each in a single request)
+DRIFT_REFUSALS_FREE = 6  # dispatches refused for a changed target that do not spend a step
+COPY_GUARD_ASKS = 2  # none-led plans per page on which the guard asks which value clause the page could answer
 VARIANTS = {
     "std": {"consequences": True},
     "verify3": {"consequences": True, "verify3": True},
@@ -306,7 +309,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
     walled_hosts = set()  # sites that answered a navigation with a block page; their links are not offered again
     # Every per-page memo below is keyed by page_key(url); the exact state is `fp`.
     copy_dups = {}  # page -> duplicate copies attempted there; two withdraw the copy action on that page
-    asked_missing = set()  # pages where the guard asked "which goal clause is still unsatisfied here" (once per page)
+    asked_missing = {}  # page -> how often the guard asked "which goal clause is still unsatisfied here" (see COPY_GUARD_ASKS)
     asked_full = set()  # pages where, with every clause holding a value, Jev was asked whether the register is complete
     forced_wanted = None  # the clause a guard named for the copy it forces next...
     forced_page = None  # ...and the page it was named on: a forced copy does not travel to another page
@@ -595,11 +598,15 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
             # state (a full element table) is nearly all of the request, so three requests cost three
             # times the tokens for the same information. The judgments are unchanged; only the transport
             # is shared. `done` is not asked before anything has been done.
+            # The bind heads ride along too (bind_heads): for each value-taking candidate, "if this is the
+            # pick, which fact / option" -- so choosing a field costs no second round trip. Speculative
+            # and bounded; only the chosen candidate's head is read.
             qs = {"offpath": Q_OFFPATH["answers_question"]}
             if history:
                 qs["done"] = Q_DONE["answers_question"]
             if cands:
                 qs["target"] = q_next(cands)["target"]
+                qs.update(bind_heads(cands, task["facts"], used_facts))
             for shrink in range(4):
                 try:
                     ans_all = jev(
@@ -622,6 +629,8 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                     cands = [c for c in cands if c["id"] in kept or c["idx"] < 0]
                     if "target" in qs:
                         qs["target"] = q_next(cands)["target"]
+                        qs = {k: v for k, v in qs.items() if not k.startswith("bind_")}
+                        qs.update(bind_heads(cands, task["facts"], used_facts))
                     rec["events"].append(
                         f"page state too large for one request -> observation halved ({keep} elements, text {len(obs['visible_text'])} chars) for the rest of the run"
                     )
@@ -760,7 +769,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                 and value_clauses
                 and not values_in_hand()
                 and copy_cand is not None
-                and pk not in asked_missing
+                and asked_missing.get(pk, 0) < COPY_GUARD_ASKS
             ):
                 # 'back' is the same case as 'none' here: the goal says "then return to the results" and the
                 # planner reached for it on the product page BEFORE reading the price -- four times in a row
@@ -774,11 +783,22 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                 # for it now. Asked once per page; a clause that yields nothing here is not offered again
                 # (copy_failed). A copy FOR ANOTHER CLAUSE is not the copy already used on this page
                 # state, so the once-per-state memo does not apply to it.
-                asked_missing.add(pk)
+                asked_missing[pk] = asked_missing.get(pk, 0) + 1
                 clauses = open_clauses(pk)
                 if clauses:
                     w = jev({**base, "state": obs}, q_copy_target(clauses), "copy")["wanted"]
-                    if w["choice"] != "none":
+                    if w["choice"] == "none":
+                        # Said out loud: a silent 'none' here looked like the guard never ran. On the sorted
+                        # Amazon results the same question answered the price clause at 0.38 in one run and
+                        # 'none' in the next; the second ask on the next none-led plan is what the variance
+                        # needs, and the plan after that is the stop anyway (NONE_STREAK_K).
+                        emit(
+                            "note",
+                            step=step,
+                            text=f"'{ranked[0]}' leads (p={probs[ranked[0]]:.2f}) with {len(clauses)} value clause(s) unread, but Jev sees "
+                            f"none of them on this page (none p={w['probabilities'].get('none', 0.0):.2f}; ask {asked_missing[pk]}/{COPY_GUARD_ASKS})",
+                        )
+                    else:
                         forced_wanted, forced_page = w["choice"], pk
                         emit(
                             "note",
@@ -1305,7 +1325,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             # rating clause won the vote twice and failed twice while the price, right beside
                             # it, was never asked for. Let the guard ask again on this page, minus the failed
                             # clause (open_clauses drops it).
-                            asked_missing.discard(pk)
+                            asked_missing.pop(pk, None)
                         ranked = [k for k in ranked if k != pick]
                     if not succeeded and ranked and probs.get(ranked[0], 0.0) < act_floor:
                         # the copy was the only candidate with weight; what is left is below the line 'none'
@@ -1355,11 +1375,21 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                         continue
                     cand["_fact_keys"] = fact_keys
                 elif cand.get("options"):
-                    value = jev(base, q_option(cand), "bind")["option"]["choice"]
+                    inline = ans_all.get(f"bind_{cand['id']}")
+                    if inline is not None:
+                        value = inline["choice"]
+                        rec["bound_inline"] = True
+                    else:
+                        value = jev(base, q_option(cand), "bind")["option"]["choice"]
                 elif cand.get("needs_value") or kind in ("fill", "fill_enter"):
                     used = used_facts.get(cand["target_key"], set())
                     offer = {k: v for k, v in task["facts"].items() if k not in used} or task["facts"]
-                    fk = jev(base, q_bind(cand, offer), "bind")["fact"]["choice"]
+                    inline = ans_all.get(f"bind_{cand['id']}")
+                    if inline is not None:
+                        fk = inline["choice"]
+                        rec["bound_inline"] = True
+                    else:
+                        fk = jev(base, q_bind(cand, offer), "bind")["fact"]["choice"]
                     if fk == "none":
                         # Keyboard mode (opt-in variant): the value is not among the facts, so spell it from
                         # the goal one key per judgment. The state is deliberately small -- the goal, this
@@ -1556,6 +1586,19 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                         if hasattr(env, "inflight") and env.inflight() > 0:
                             env.wait_inflight(3000)
                     env.act(cand, value, kind)
+                if str(getattr(env, "last_action_error", "") or "").startswith("stale candidate"):
+                    # The target changed between the observation and the dispatch (a re-rendered list, a
+                    # button whose label flipped, a field another script filled): nothing was sent, so there
+                    # is nothing to verify and nothing to hold against the control. The ballot that chose it
+                    # described a page that is gone -- look again and re-plan.
+                    err = env.last_action_error
+                    env.last_action_error = None
+                    rec["events"].append({"attempt": attempt, "action": desc[:120], "outcome": err[:160]})
+                    emit("note", step=step, attempt=attempt, text=f"{err[:120]} -> re-observe and re-plan")
+                    log["drift_refusals"] = log.get("drift_refusals", 0) + 1
+                    rec["drift_refused"] = True
+                    replan = True
+                    break
                 after = env.observe()
                 if pre_typed and kb_state.get("last_read"):
                     # What the keyboard read back from the focused field the moment it stopped: the text and
@@ -1867,7 +1910,13 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                 log["exhausted_steps"] = log.get("exhausted_steps", 0) + 1
             rec["elapsed_s"] = round(time.monotonic() - t0, 1)
             log["steps"].append(rec)
-            step += 1
+            if rec.get("drift_refused") and log["drift_refusals"] <= DRIFT_REFUSALS_FREE:
+                # Nothing was sent and nothing was learned about the task: the page moved under the ballot.
+                # Looking again is not a step of the task, so it does not spend one -- up to a cap, because a
+                # page that changes on every look would otherwise be looked at forever.
+                rec["free_look"] = True
+            else:
+                step += 1
             if dead_end or escalate or stalled:
                 break
         else:

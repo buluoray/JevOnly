@@ -51,6 +51,39 @@ def q_option(cand):
     }
 
 
+FANOUT_MAX_BIND = 6  # value-taking candidates whose bind question rides on the plan request
+
+
+def bind_heads(cands, facts, used_facts=None):
+    """The bind questions that ride on the PLAN request instead of following it: for each candidate on
+    the ballot that takes a value (a field offered the facts, a select offered its options), one choice
+    head asked speculatively -- "if this is the next action, which value" -- so the answer is in hand the
+    moment the planner picks that candidate, one request instead of two. Only the head of the chosen
+    candidate is ever read; the others cost tokens, so the fan-out is bounded by FANOUT_MAX_BIND, and a
+    page with more value-taking controls than that keeps the follow-up request. Returns {} when nothing
+    on the ballot takes a value or there is nothing to offer."""
+    used_facts = used_facts or {}
+    takers = [c for c in cands if c.get("options") or c.get("needs_value") or c.get("kind") in ("fill", "fill_enter")]
+    if not takers or len(takers) > FANOUT_MAX_BIND:
+        return {}
+    heads = {}
+    for c in takers:
+        if c.get("options"):
+            head = q_option(c)["option"]
+        else:
+            used = used_facts.get(c.get("target_key"), set())
+            offer = {k: v for k, v in facts.items() if k not in used} or facts
+            if not offer:
+                continue
+            head = q_bind(c, offer)["fact"]
+        head = dict(head)
+        head["instructions"] = (
+            f"IF the agent's next action turns out to be: {c['desc']} -- " + head["instructions"].split(" — ", 1)[-1]
+        )
+        heads[f"bind_{c['id']}"] = head
+    return heads
+
+
 def q_form_bind(fields, facts, used_facts=None):
     """One request that binds EVERY empty field of a form: one choice question per field, all reading the
     same `form_fields` state. A text field is offered the facts (minus those already used for that target);
