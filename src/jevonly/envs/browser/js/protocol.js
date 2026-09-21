@@ -3,6 +3,29 @@
 const readline = require('readline');
 const { snapshot } = require('./snapshot');
 
+const NAVIGATION_RACE = /Execution context was destroyed|Cannot find context|Target closed|navigation/i;
+
+/**
+ * A snapshot taken while the page is mid-navigation (a redirect landing right as the observation starts:
+ * en.wikipedia.org -> Main_Page did this on the very first look) dies with "Execution context was
+ * destroyed". That is not an observation of anything; wait for the new document and look again, twice,
+ * before letting the error through.
+ * @param {import("playwright").Page} page active page
+ * @param {object} command wire command
+ * @returns {Promise<object>} snapshot
+ */
+async function snapshotSettled(page, command) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await snapshot(page, command);
+    } catch (error) {
+      if (attempt >= 2 || !NAVIGATION_RACE.test(String(error.message || error))) throw error;
+      await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => null);
+      await page.waitForTimeout(250);
+    }
+  }
+}
+
 /**
  * Dispatch one parsed wire command.
  * @param {object} command parsed command
@@ -14,7 +37,7 @@ async function dispatchCommand(command, actions) {
     case 'goto':
       return actions.goto(command);
     case 'snapshot':
-      return { ok: true, snapshot: await snapshot(actions.currentPage(), command) };
+      return { ok: true, snapshot: await snapshotSettled(actions.currentPage(), command) };
     case 'act':
       return actions.act(command);
     case 'inject_popup':
@@ -79,4 +102,4 @@ async function runProtocol(actions, input = process.stdin, output = process.stdo
   await actions.close();
 }
 
-module.exports = { dispatchCommand, runProtocol };
+module.exports = { snapshotSettled, dispatchCommand, runProtocol };
