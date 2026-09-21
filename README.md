@@ -52,6 +52,29 @@ or `allow`. Details: [How it works](docs/how-it-works.md) · [Architecture](docs
 The rules in `jevonly.core` are environment-agnostic; the browser (`jevonly.envs.browser`) is the first
 environment. See [Writing an environment](docs/architecture.md#writing-an-environment).
 
+## QA regression suites
+
+The same loop, pointed at a site you own, is a cheap regression tester: a suite of closed tasks, each run
+several times, one pass/fail row per case, every run's event log kept for replay.
+
+```bash
+jevonly qa suite.jsonl --repeat 3 --out qa-out/
+```
+
+One case per line:
+
+```json
+{"id": "cart-badge", "start": "https://staging.shop.example/", "facts": {"sku": "A-1"},
+ "goal": "Add the product with the given sku to the cart and stop when the cart badge shows 1",
+ "expect": {"text": "Cart (1)", "answer": ["1"]}}
+```
+
+`expect.text` / `expect.url_contains` is a code-owned check on the page — the run passes only when the page
+really shows it, whatever Jev says. `expect.answer` lists substrings the reported answer must contain. The
+command prints a table (pass count, median steps, seconds, Jev calls, tokens, estimated cost, why a run
+failed), writes `qa-report.json` + `qa-report.md`, and exits non-zero when any run failed. A case costs
+about a cent per run (measured: $0.014 for a 20-step task).
+
 ## Safety and privacy
 
 - The viewer binds to `127.0.0.1` only; the key stays in the tab's `sessionStorage` and the local process.

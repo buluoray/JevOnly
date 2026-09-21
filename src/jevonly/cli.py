@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from .core.loop import run_task
+from .qa import build_task
 
 
 def _short(value, limit):
@@ -103,27 +104,17 @@ def _ask_on_terminal(info):
 
 
 def _run(args):
-    facts = _facts(args.facts)
-    task = {
-        "id": "cli",
-        "env": "computer" if args.app else "browser",
-        "start": args.start or f"app://{args.app}",
-        "app": args.app,
-        "launch": bool(args.launch),
-        "goal": args.goal,
-        "facts": facts,
-        "terminal": {},
-        "faults": {},
-        "max_steps": args.max_steps,
-        "budget_s": 1800,
-        "max_backtracks": 20,
-        "max_cands": 200,
-        "text_budget": 6000,
-        "ctx_budget": 400,
-        "thresholds": _thresholds(args.threshold),
-        "irreversible": args.irreversible,
-        "prefilter": not args.no_prefilter,
-    }
+    task = build_task(
+        args.goal,
+        args.start,
+        facts=_facts(args.facts),
+        max_steps=args.max_steps,
+        thresholds=_thresholds(args.threshold),
+        irreversible=args.irreversible,
+        prefilter=not args.no_prefilter,
+        app=args.app,
+        launch=args.launch,
+    )
     if args.irreversible == "ask":
         task["approve"] = _ask_on_terminal
     output = Path(args.out) if args.out else None
@@ -151,6 +142,29 @@ def _serve(args):
     from .viewer.server import main as serve_main
 
     return serve_main(["--port", str(args.port)])
+
+
+def _qa(args):
+    from . import qa
+
+    try:
+        cases = qa.load_suite(args.suite)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"suite error: {exc}", file=sys.stderr)
+        return 2
+    report = qa.run_suite(
+        cases,
+        repeat=args.repeat,
+        out_dir=args.out,
+        variant=args.variant,
+        max_steps=args.max_steps,
+        prefilter=not args.no_prefilter,
+        on_line=lambda line: print(line, flush=True),
+    )
+    print()
+    print(qa.render_table(report))
+    print(f"report: {Path(args.out) / 'qa-report.json'}")
+    return 0 if report["passed"] else 1
 
 
 def _parser():
@@ -193,6 +207,18 @@ def _parser():
     serve = commands.add_parser("serve", help="start the loopback viewer")
     serve.add_argument("--port", type=int, default=7791)
     serve.set_defaults(func=_serve)
+
+    qa_cmd = commands.add_parser(
+        "qa",
+        help="run a suite of closed tasks as a regression test: one pass/fail row per case, repeated to expose flakes",
+    )
+    qa_cmd.add_argument("suite", help="JSONL file, one case per line: id, start, goal, facts?, expect?, max_steps?")
+    qa_cmd.add_argument("--repeat", type=int, default=1, help="runs per case (default 1)")
+    qa_cmd.add_argument("--out", default="qa-out", help="directory for per-run event logs and the report")
+    qa_cmd.add_argument("--variant", choices=("std", "noaccept_kb"), default="std")
+    qa_cmd.add_argument("--max-steps", type=int, default=28, help="default for cases that set none")
+    qa_cmd.add_argument("--no-prefilter", action="store_true", help="as for `run`")
+    qa_cmd.set_defaults(func=_qa)
     return parser
 
 
