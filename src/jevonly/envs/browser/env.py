@@ -248,6 +248,32 @@ class BrowserEnv:
                     "desc": "copy a value shown on this page -- text a later step needs, to type into a field or to report as the result; changes nothing on the page",
                 }
             )
+        for i, c in enumerate(self._snap["candidates"]):
+            # A search box that holds typed text and offers no suggestion to pick has one way forward:
+            # Enter. The typing path never presses it on its own (a premature Enter submits a half-typed
+            # form), so it is offered here as a CHOICE, judged like any other move and undone by going
+            # back. On the GitHub home page "JevOnly" sat in the search box for four plans with nothing
+            # to click, and the run ended without ever reaching the repository.
+            if not c.get("value") or c.get("tag") not in ("input", "textarea"):
+                continue
+            if c["role"] not in ("searchbox", "combobox") and c.get("input_type") != "search":
+                continue
+            out.append(
+                {
+                    "id": f"enter-{ids[i]}",
+                    "idx": i,
+                    "kind": "press_enter",
+                    "options": None,
+                    "target_key": f"enter:{c['role']}:{c.get('name', '')}",
+                    "needs_commit": False,
+                    "side_effect": "navigation",
+                    "fam": "press_enter",
+                    "desc": (
+                        f'press Enter in {c["role"]} "{c.get("name", "")}" to submit what it holds ("{c["value"]}") '
+                        "-- for a search that shows no suggestion to pick"
+                    ),
+                }
+            )
         prev = self._url_stack[-1][0] if self._url_stack else None
         if prev and prev.split("#", 1)[0] != self._snap["url"].split("#", 1)[0]:
             # The browser's Back button, as a choice. Undo is the loop's tool for a wrong move; a goal that
@@ -327,6 +353,27 @@ class BrowserEnv:
             return
         if (kind or cand["kind"]) == "scroll":
             value = cand.get("scroll_dir", "down")
+        if (kind or cand["kind"]) == "press_enter":
+            # focus the field (a click, which keeps its text) and press Enter; the frame pushed above is
+            # what undo returns to
+            try:
+                r = self._cmd(
+                    cmd="keyboard",
+                    focus=True,
+                    index=cand["idx"],
+                    key="Enter",
+                    settle_ms=self.task.get("act_settle_ms"),
+                    settle_cap_ms=self.task.get("settle_cap_ms"),
+                )
+                # Enter on a search box is a navigation: give the requests it started a moment to land, so the
+                # observation that follows is of the results and not of the box mid-submit.
+                self.wait_inflight(3000)
+                self.last_action_note = f"pressed Enter in the field; it now reads {str(r.get('typed', ''))[:40]!r}"
+            except RuntimeError as exc:
+                if "browser server died" in str(exc):
+                    raise
+                self.last_action_error = str(exc)[:160]
+            return
         try:
             r = self._cmd(
                 cmd="act",

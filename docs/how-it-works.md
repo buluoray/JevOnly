@@ -67,6 +67,7 @@ The Node snapshot contains visible, enabled interactive controls. Python describ
 | `none`           | Always in an action vote.                                      | Signals completion or inability to advance.                                                                                                                                                                   |
 | `back`           | The previous page differs from this one.                       | The browser's Back button, as a choice: "return to the search results" is a move the model can pick, not only an undo.                                                                                        |
 | `fill_form`      | At least two empty fields (text or select) and some facts.     | Fills the whole form in one pass: one request binds every field to a fact or option (or `none`), one action fills them, one verification judges the result, one undo restores them all. Nothing is submitted. |
+| `press_enter`    | A search box (or a typed combobox) that holds text.            | Presses Enter in that box to submit what it holds. The typing path never presses Enter on its own; this is the choice that finishes a search with no suggestion to pick. Undo goes back.                      |
 
 ### Goal values
 
