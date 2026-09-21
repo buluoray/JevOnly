@@ -49,7 +49,7 @@ function describeCandidate(candidate) {
     tag: candidate.tag || '-',
     fam: cleanText(candidate.fam).slice(0, 80),
   };
-  for (const key of ['hint', 'host', 'pseudo', 'value', 'placeholder']) {
+  for (const key of ['hint', 'host', 'pseudo', 'value', 'placeholder', 'input_type']) {
     if (candidate[key] !== undefined && candidate[key] !== '') result[key] = candidate[key];
   }
   for (const key of ['options', 'checked', 'expanded']) {
@@ -365,6 +365,8 @@ async function snapshot(page, opts = {}) {
         extra.value = clean(element.value).slice(0, 40);
       }
       if (element.placeholder) extra.placeholder = element.placeholder;
+      // The input type decides what a value CAN be typed into: a file input takes no text at all.
+      if (tag === 'input' && element.type && element.type !== 'text') extra.input_type = element.type;
       if (element.hasAttribute('aria-expanded')) extra.expanded = element.getAttribute('aria-expanded') === 'true';
       candidates.push({ role, name, ctx: context, ...extra });
       element.setAttribute('data-jev-cand', String(candidates.length - 1));

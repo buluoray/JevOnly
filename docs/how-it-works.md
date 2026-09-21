@@ -59,13 +59,14 @@ A timeout or missing acknowledgment is explicitly not proof. The loop escalates 
 
 The Node snapshot contains visible, enabled interactive controls. Python describes each using role, accessible name, context, current value, selectable options, checked/expanded state, and modal scope. It also adds:
 
-| Synthetic choice | When offered                                                   | Effect                                                                                                                 |
-| ---------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `copy`           | The page exposes text.                                         | Reads a page value into the fact register without changing the page.                                                   |
-| `scroll up/down` | Viewport mode detects more content.                            | Moves by about 80% of the viewport.                                                                                    |
-| `find`           | A goal span, useful goal word, or fact could occur off screen. | Finds and centers page text, like Ctrl+F.                                                                              |
-| `none`           | Always in an action vote.                                      | Signals completion or inability to advance.                                                                            |
-| `back`           | The previous page differs from this one.                       | The browser's Back button, as a choice: "return to the search results" is a move the model can pick, not only an undo. |
+| Synthetic choice | When offered                                                   | Effect                                                                                                                                                                                                        |
+| ---------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `copy`           | The page exposes text.                                         | Reads a page value into the fact register without changing the page.                                                                                                                                          |
+| `scroll up/down` | Viewport mode detects more content.                            | Moves by about 80% of the viewport.                                                                                                                                                                           |
+| `find`           | A goal span, useful goal word, or fact could occur off screen. | Finds and centers page text, like Ctrl+F.                                                                                                                                                                     |
+| `none`           | Always in an action vote.                                      | Signals completion or inability to advance.                                                                                                                                                                   |
+| `back`           | The previous page differs from this one.                       | The browser's Back button, as a choice: "return to the search results" is a move the model can pick, not only an undo.                                                                                        |
+| `fill_form`      | At least two empty fields (text or select) and some facts.     | Fills the whole form in one pass: one request binds every field to a fact or option (or `none`), one action fills them, one verification judges the result, one undo restores them all. Nothing is submitted. |
 
 ### Goal values
 

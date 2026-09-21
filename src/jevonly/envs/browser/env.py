@@ -225,6 +225,8 @@ class BrowserEnv:
                     "needs_commit": kind == "fill",
                     "side_effect": side,
                     "fam": c.get("fam"),
+                    "value": c.get("value", ""),
+                    **({"input_type": c["input_type"]} if c.get("input_type") else {}),
                     **({"scroll_dir": c["pseudo"]} if c.get("pseudo") else {}),
                     **({"host": c["host"]} if c.get("host") else {}),
                 }
@@ -356,6 +358,32 @@ class BrowserEnv:
             # A detached/re-rendered/obscured element is an action that did nothing:
             # the loop's verify + no-effect path decides what to do next.
             self.last_action_error = str(exc)[:160]
+
+    def act_many(self, fills):
+        """Fill several fields of one page as ONE action: a single frame on the undo stack, so a failed
+        verification restores the whole form with one undo. ``fills`` is a list of (cand, value, kind).
+        Elements are addressed by the snapshot's data-jev-cand index, which a fill does not shift; a field
+        that re-renders away is reported per field in ``last_action_error`` and the rest are still filled."""
+        self._url_stack.append((self._snap["url"], self._form_state()))
+        errors = []
+        for cand, value, kind in fills:
+            try:
+                self._cmd(
+                    cmd="act",
+                    index=cand["idx"],
+                    action=kind or cand["kind"],
+                    value=value,
+                    act_settle_ms=self.task.get("act_settle_ms"),
+                    settle_cap_ms=self.task.get("settle_cap_ms"),
+                )
+            except RuntimeError as exc:
+                if "browser server died" in str(exc):
+                    raise
+                errors.append(f"{cand['desc'][:60]}: {str(exc)[:80]}")
+        self.last_settled = None
+        if errors:
+            self.last_action_error = f"{len(errors)} of {len(fills)} fields refused the fill: " + "; ".join(errors)
+        self.last_action_note = f"filled {len(fills) - len(errors)} of {len(fills)} fields in one pass"
 
     def inflight(self):
         """How many requests started by the last action are still in flight (0 when the page has answered)."""

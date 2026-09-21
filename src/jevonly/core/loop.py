@@ -23,6 +23,7 @@ from .questions import (
     q_bind,
     q_commit,
     q_copy_target,
+    q_form_bind,
     q_next,
     q_option,
     q_value_clauses,
@@ -42,6 +43,8 @@ COPY_OK_T = 0.5  # a copied value is stored when the clause check reads at least
 COPY_OK_BAND = 0.1  # ...and a reading this far under the line is asked once more with the lines around it
 OFFPATH_REPEAT_MARGIN = 0.15  # after one undo, off-path must clear the line by this much to undo the same move again
 MAX_FEEDBACK = 2
+FORM_FILL_MIN_FIELDS = 2  # a whole-form pass is offered from two empty fields; one field is an ordinary fill
+FORM_FILL_MAX_FIELDS = 12  # fields bound per pass (one question each in a single request)
 VARIANTS = {
     "std": {"consequences": True},
     "verify3": {"consequences": True, "verify3": True},
@@ -140,6 +143,53 @@ def page_key(url):
     if frag.startswith("/") or frag.startswith("!"):
         return f"{base}#{frag.split('?', 1)[0]}"
     return base
+
+
+FORM_FIELD_KINDS = ("fill", "fill_enter", "select")
+
+
+def _is_empty_field(c):
+    if c.get("input_type") in ("file", "range", "color"):
+        return False  # takes no typed text (file) or always holds a value (range, color): never part of a pass
+    if not c.get("value"):
+        return True
+    # A <select> resting on its first option holds the placeholder ("Open this select menu") or the default;
+    # re-selecting it is a no-op, so it still counts as empty. Any other selection was made on purpose.
+    return bool(c.get("options")) and c["value"] == c["options"][0]
+
+
+def form_fields(cands):
+    """The empty fields of the page a whole-form pass could fill: text-ish fields and selects with no current
+    value. An environment that does not report ``value`` on its candidates counts every such field as empty."""
+    return [c for c in cands if c.get("kind") in FORM_FIELD_KINDS and c.get("idx", -1) >= 0 and _is_empty_field(c)]
+
+
+def form_fill_candidate(cands, facts):
+    """The one-pass form fill as a choice on the ballot, or None. Offered when the page shows at least
+    FORM_FILL_MIN_FIELDS empty fields and the run holds facts to put in them: every field is bound in ONE
+    Jev request, filled in one action, verified once. Fields no fact fits stay empty; nothing is submitted.
+    The planner still decides -- filling boxes one at a time remains on the same ballot."""
+    fields = form_fields(cands)
+    if len(fields) < FORM_FILL_MIN_FIELDS or not facts:
+        return None
+    names = ", ".join(f'"{(c.get("target_key") or "").split(":", 1)[-1][:30]}"' for c in fields[:6])
+    if len(fields) > 6:
+        names += f", +{len(fields) - 6} more"
+    return {
+        "id": "fill_form",
+        "idx": -1,
+        "kind": "fill_form",
+        "options": None,
+        "target_key": "fill_form",
+        "needs_commit": False,
+        "side_effect": "reversible",
+        "fam": "fill_form",
+        "_fields": fields,
+        "desc": (
+            f"fill the whole form on this page in one pass: {len(fields)} empty fields ({names}), each with the given "
+            "fact that matches it; fields no fact fits are left empty; nothing is submitted or clicked"
+        ),
+    }
 
 
 def run_task(task, variant="std", rep=0, on_event=None, stop=None):
@@ -494,6 +544,9 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                     log["steps"].append(rec)
                     step += 1
                     continue
+            ff = form_fill_candidate(all_cands, task["facts"])
+            if ff is not None:
+                all_cands = [*all_cands, ff]
             dead = rejected.get(fp, {})
             if walled_hosts:
                 all_cands = [c for c in all_cands if c.get("host") not in walled_hosts]
@@ -1244,7 +1297,41 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                 side = side_effect(cand, obs)
                 value, kind = None, cand["kind"]
                 pre_typed = None  # set when keyboard mode already typed into the field
-                if cand.get("options"):
+                form_fills = None  # [(field cand, value, kind)] when the whole form is filled in one pass
+                if kind == "fill_form":
+                    fields = cand["_fields"][:FORM_FILL_MAX_FIELDS]
+                    answers = jev(
+                        {**base, "form_fields": [f["desc"] for f in fields]},
+                        q_form_bind(fields, task["facts"], used_facts),
+                        "bind",
+                    )
+                    form_fills, fact_keys = [], []
+                    for i, f in enumerate(fields):
+                        choice = answers[f"field_{i}"]["choice"]
+                        if choice == "none":
+                            continue
+                        if f.get("options"):
+                            form_fills.append((f, choice, "select"))
+                        else:
+                            # never Enter: one field of a larger form, submitted later by a button if at all
+                            form_fills.append((f, task["facts"].get(choice), "fill"))
+                            fact_keys.append((f["target_key"], choice))
+                    if not form_fills:
+                        rec["events"].append(
+                            {
+                                "attempt": attempt,
+                                "action": cand["desc"][:120],
+                                "outcome": f"no fact fits any of the {len(fields)} fields -> skip this action",
+                            }
+                        )
+                        rejected.setdefault(fp, {})[cand["id"]] = 0.0
+                        ranked = [k for k in ranked if k != pick]
+                        skipped += 1
+                        if not ranked or skipped > 6:
+                            break
+                        continue
+                    cand["_fact_keys"] = fact_keys
+                elif cand.get("options"):
                     value = jev(base, q_option(cand), "bind")["option"]["choice"]
                 elif cand.get("needs_value") or kind in ("fill", "fill_enter"):
                     used = used_facts.get(cand["target_key"], set())
@@ -1340,11 +1427,17 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                         if cand.get("needs_commit"):
                             commit = jev({**base, "state": obs}, q_commit(cand), "commit")["commit"]["choice"]
                             kind = "fill_enter" if commit == "press_enter" else "fill"
-                desc = cand["desc"] + (
-                    f' with value "{str(value)[:60]}"'
-                    if value
-                    else (f' -> typed "{pre_typed[:60]}" key by key, suggestions left open' if pre_typed else "")
-                )
+                if form_fills is not None:
+                    desc = f"filled {len(form_fills)} of {len(cand['_fields'])} form fields in one pass: " + "; ".join(
+                        f"{(f.get('target_key') or '').split(':', 1)[-1][:30]} = {str(v)[:40]}"
+                        for f, v, _ in form_fills
+                    )
+                else:
+                    desc = cand["desc"] + (
+                        f' with value "{str(value)[:60]}"'
+                        if value
+                        else (f' -> typed "{pre_typed[:60]}" key by key, suggestions left open' if pre_typed else "")
+                    )
                 if user_stopped():
                     log["stopped"] = "user_stop"
                     escalate = True  # leaves both loops without acting
@@ -1364,6 +1457,12 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                 injected = None
                 if pre_typed:
                     pass  # the keys were already pressed; verification judges the result
+                elif form_fills is not None:
+                    if hasattr(env, "act_many"):
+                        env.act_many(form_fills)
+                    else:
+                        for f, v, k in form_fills:
+                            env.act(f, v, k)
                 elif fault and attempt == 0:
                     injected = fault["kind"]
                     if fault["kind"] == "noop":
@@ -1560,6 +1659,8 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             )
                     if cand.get("_fact_key"):
                         used_facts.setdefault(cand["target_key"], set()).add(cand["_fact_key"])
+                    for tk, fk in cand.get("_fact_keys") or []:
+                        used_facts.setdefault(tk, set()).add(fk)
                     if pre_typed:
                         # The field has served its purpose with this value. A search box is reused for
                         # different things over a run (Seattle, then Portland): forget the cached choice so
