@@ -8,6 +8,7 @@ const test = require('node:test');
 
 const { createRequestTracker, settle } = require('../../src/jevonly/envs/browser/js/actions');
 const { describeCandidate, groupTextUnits } = require('../../src/jevonly/envs/browser/js/snapshot');
+const { semanticSignature } = require('../../src/jevonly/envs/browser/js/signature');
 
 function request(type) {
   return { resourceType: () => type };
@@ -96,6 +97,14 @@ test('settle reports a capped request without waiting beyond the cap', async () 
   });
 });
 
+test('semanticSignature is self-contained page code: no closures, serialisable by source', () => {
+  const src = semanticSignature.toString();
+  assert.match(src, /^function semanticSignature\(element\)/);
+  // whatever it references must be defined inside it or be a browser global
+  assert.ok(!/require\(|module\.|exports/.test(src));
+  assert.equal(new Function(`return ${src}`)().name, 'semanticSignature');
+});
+
 const e2e = process.env.JEVONLY_E2E === '1' ? test : test.skip;
 
 e2e('browser child handles snapshot, keyboard, and click through JSON lines', async (t) => {
@@ -126,6 +135,7 @@ e2e('browser child handles snapshot, keyboard, and click through JSON lines', as
     '<label>Name <input aria-label="Name"></label>',
     "<button onclick=\"document.getElementById('status').textContent='clicked'\">Vote</button>",
     '<p id="status">ready</p>',
+    '<button id="drift">One way</button>',
     '<table><tr><th>Spec</th><th>Anker Nano 30W</th><th>Anker 65W</th></tr>',
     '<tr><td>Price</td><td>$18.24</td><td>$39.99</td></tr></table>',
   ].join('');
@@ -146,7 +156,38 @@ e2e('browser child handles snapshot, keyboard, and click through JSON lines', as
 
   const typed = await command({ cmd: 'keyboard', focus: true, index: inputIndex, text: 'JevOnly', settle_ms: 1 });
   assert.equal(typed.typed, 'JevOnly');
-  assert.equal((await command({ cmd: 'act', index: buttonIndex, action: 'click', act_settle_ms: 1 })).ok, true);
+
+  // Drift refusal: the control the ballot described is still the same node but no longer says the same
+  // thing -> the action is refused unsent. The same node, unchanged, is clicked as usual.
+  const driftIndex = first.snapshot.candidates.findIndex((candidate) => candidate.name === 'One way');
+  assert.notEqual(driftIndex, -1);
+  const driftSig = first.snapshot.candidates[driftIndex].sig;
+  assert.ok(driftSig && driftSig.startsWith('button|'), driftSig);
+  assert.equal(
+    (await command({ cmd: 'act', index: buttonIndex, action: 'click', expect_sig: driftSig, act_settle_ms: 1 })).ok,
+    false,
+    'a signature that belongs to another control is refused',
+  );
+  const refused = await command({
+    cmd: 'act',
+    index: driftIndex,
+    action: 'click',
+    expect_sig: driftSig.replace('One way', 'Round trip'),
+    act_settle_ms: 1,
+  });
+  assert.equal(refused.ok, false);
+  assert.match(refused.error, /^stale candidate: target changed since observation \(was "Round trip", now "One way"\)/);
+  assert.equal(
+    (await command({ cmd: 'act', index: driftIndex, action: 'click', expect_sig: driftSig, act_settle_ms: 1 })).ok,
+    true,
+    'the unchanged control passes its own signature',
+  );
+  // the real Vote click, with its own signature
+  const voteSig = first.snapshot.candidates[buttonIndex].sig;
+  assert.equal(
+    (await command({ cmd: 'act', index: buttonIndex, action: 'click', expect_sig: voteSig, act_settle_ms: 1 })).ok,
+    true,
+  );
 
   const second = await command({ cmd: 'snapshot', viewport_only: true });
   assert.match(second.snapshot.visible_text, /clicked/);

@@ -1,5 +1,7 @@
 'use strict';
 
+const { semanticSignature } = require('./signature');
+
 const MAX_CANDIDATES = 30;
 const TEXT_BUDGET = 900;
 
@@ -52,7 +54,7 @@ function describeCandidate(candidate) {
   for (const key of ['hint', 'host', 'pseudo', 'value', 'placeholder', 'input_type']) {
     if (candidate[key] !== undefined && candidate[key] !== '') result[key] = candidate[key];
   }
-  for (const key of ['options', 'checked', 'expanded']) {
+  for (const key of ['options', 'checked', 'expanded', 'sig']) {
     if (candidate[key] !== undefined) result[key] = candidate[key];
   }
   return result;
@@ -122,10 +124,13 @@ async function snapshot(page, opts = {}) {
     preferMain: Boolean(opts.prefer_main),
     ctxBudget: opts.ctx_budget || 140,
     viewportOnly: Boolean(opts.viewport_only),
+    signatureSrc: semanticSignature.toString(),
   };
   const transition = await settleTransitions(page, opts.transition_cap_ms ?? TRANSITION_CAP_MS);
 
   const info = await page.evaluate((o) => {
+    // the same function actions.js runs before dispatch; a mismatch there refuses the action unsent
+    const signatureOf = new Function(`return ${o.signatureSrc}`)();
     const clean = (value) =>
       String(value || '')
         .trim()
@@ -368,7 +373,7 @@ async function snapshot(page, opts = {}) {
       // The input type decides what a value CAN be typed into: a file input takes no text at all.
       if (tag === 'input' && element.type && element.type !== 'text') extra.input_type = element.type;
       if (element.hasAttribute('aria-expanded')) extra.expanded = element.getAttribute('aria-expanded') === 'true';
-      candidates.push({ role, name, ctx: context, ...extra });
+      candidates.push({ role, name, ctx: context, ...extra, sig: signatureOf(element) });
       element.setAttribute('data-jev-cand', String(candidates.length - 1));
     }
 
