@@ -22,8 +22,13 @@ class Environment(Protocol):
     def act(self, cand: dict, value: Any = None, kind: str | None = None) -> None:
         """Perform one candidate. Failures are reported through ``last_action_error``, never raised."""
 
-    def undo(self) -> None:
-        """Return to the state before the last ``act`` as closely as the environment allows."""
+    def undo(self) -> Any:
+        """Return to the state before the last ``act`` as closely as the environment allows.
+
+        Return ``None`` when the state is back (the browser reloads or goes back). An environment that can
+        only compensate some actions returns ``{"restored": bool, "error": str | None}``; on
+        ``restored=False`` the loop keeps the action in its history and escalates instead of narrating a
+        state that never came back."""
 
     def fingerprint(self, obs: dict) -> str:
         """A stable identity for a state, used to detect no-effect actions and revisits."""
@@ -51,3 +56,5 @@ class Environment(Protocol):
 #   last_action_error / last_action_note / last_settled  -> per-action diagnostics read and cleared by the loop
 #   acceptance / terminal / candidates / noop / detour / partial / popup / delayed_ack / concurrent
 #                             -> benchmark hooks (code-owned completion checks, fault injection)
+#   supports_atomic_batch     -> False when several fields cannot be written as one action; the loop then
+#                                does not offer the whole-form pass (fields are filled one at a time)

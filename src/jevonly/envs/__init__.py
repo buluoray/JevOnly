@@ -20,8 +20,14 @@ def make(task: dict):
             from .browser import BrowserEnv  # imported on demand: the browser needs Node and Playwright
 
             register("browser", BrowserEnv)
+        elif name == "computer":
+            from .computer import ComputerEnv  # imported on demand: the desktop needs Kiro Crew installed
+
+            register("computer", ComputerEnv)
         else:
-            raise RuntimeError(f"no environment registered under {name!r}; known: {sorted(_REGISTRY) or ['browser']}")
+            raise RuntimeError(
+                f"no environment registered under {name!r}; known: {sorted(set(_REGISTRY) | {'browser', 'computer'})}"
+            )
     return _REGISTRY[name](task)
 
 
