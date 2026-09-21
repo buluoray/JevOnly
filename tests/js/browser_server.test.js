@@ -105,6 +105,42 @@ test('semanticSignature is self-contained page code: no closures, serialisable b
   assert.equal(new Function(`return ${src}`)().name, 'semanticSignature');
 });
 
+test('snapshotSettled looks again after a navigation race, and gives up on other errors', async () => {
+  const { snapshotSettled } = require('../../src/jevonly/envs/browser/js/protocol');
+  const calls = [];
+  const racing = {
+    waitForLoadState: async () => calls.push('load'),
+    waitForTimeout: async () => calls.push('wait'),
+    title: async () => {
+      calls.push('title');
+      if (calls.filter((c) => c === 'title').length === 1) {
+        throw new Error('page.title: Execution context was destroyed, most likely because of a navigation');
+      }
+      return 'Main Page';
+    },
+    evaluate: async () => ({
+      candidates: [],
+      headings: [],
+      visible_text: '',
+      text_units: [],
+      modal: null,
+      truncated_runs: [],
+    }),
+    url: () => 'https://en.wikipedia.org/wiki/Main_Page',
+  };
+  // settleTransitions uses page.evaluate too; the fake answers it with the same object (no animations counted)
+  const out = await snapshotSettled(racing, { transition_cap_ms: 0 });
+  assert.equal(out.title, 'Main Page');
+  assert.deepEqual(calls.filter((c) => c !== 'title').slice(0, 2), ['load', 'wait']);
+  const broken = {
+    ...racing,
+    title: async () => {
+      throw new Error('page.title: something else');
+    },
+  };
+  await assert.rejects(() => snapshotSettled(broken, { transition_cap_ms: 0 }), /something else/);
+});
+
 const e2e = process.env.JEVONLY_E2E === '1' ? test : test.skip;
 
 e2e('browser child handles snapshot, keyboard, and click through JSON lines', async (t) => {
