@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>JevOnly search-on-enter fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>City search</h1>
+      <label for="query">Search query</label>
+      <input id="query" name="query" type="search" autocomplete="off">
+      <p id="result" aria-live="polite"></p>
+    </main>
+    <script>
+      const query = document.querySelector("#query");
+      const result = document.querySelector("#result");
+      query.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") result.textContent = `Search submitted for ${query.value}`;
+      });
+    </script>
+  </body>
+</html>
