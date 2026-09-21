@@ -51,6 +51,36 @@ def q_option(cand):
     }
 
 
+def q_form_bind(fields, facts, used_facts=None):
+    """One request that binds EVERY empty field of a form: one choice question per field, all reading the
+    same `form_fields` state. A text field is offered the facts (minus those already used for that target);
+    a select is offered its own options. `none` leaves the field alone, so a form with facts for three of
+    its five boxes gets three filled and two untouched, and nothing is ever typed that was not supplied."""
+    used_facts = used_facts or {}
+    questions = {}
+    for i, f in enumerate(fields):
+        if f.get("options"):
+            # the option it rests on now (a placeholder or the default) is not a choice: leaving it is `none`
+            crit = {o: f"select the option '{o}'" for o in f["options"][:12] if o != f.get("value")}
+            what = "Which option does the goal or a fact call for?"
+        else:
+            used = used_facts.get(f["target_key"], set())
+            offer = {k: v for k, v in facts.items() if k not in used} or facts
+            crit = {k: f"use the fact '{k}' = {str(v)[:120]}" for k, v in offer.items()}
+            what = "Which fact is the value for THIS field?"
+        crit["none"] = "No fact or option fits this field; leave it empty."
+        questions[f"field_{i}"] = {
+            "type": "choice",
+            "instructions": (
+                f"The agent pursuing `task_goal` with `facts` is filling a whole form in one pass; `form_fields` lists every "
+                f"empty field. This question is about field {i + 1}: {f['desc'][:200]}. {what} Match the field's label and "
+                "the kind of value it takes (a name, an email, a date, a code); a fact that belongs to a different field is not it."
+            ),
+            "criteria": crit,
+        }
+    return questions
+
+
 def q_commit(cand):
     return {
         "commit": {
