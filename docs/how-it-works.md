@@ -148,6 +148,7 @@ The `start` event publishes the run-specific thresholds used by the loop so even
 | Action repeatedly returns to a known unchanged state                   | Withdraw it as a toggle after two such returns. "Unchanged" is the acceptance checklist when the task has one, and the size of the copy register otherwise. |
 | Irreversible action is unconfirmed                                     | Retry only if `not_applied >= 0.50` and the one retry allowance is unused; otherwise escalate.                                                              |
 | Every remaining action failed and the least-bad choice is irreversible | Escalate rather than force it.                                                                                                                              |
+| Undo could not restore the state                                       | Escalate (`escalate_undo_failed`). The desktop environment reports this for a press it cannot compensate; the browser always restores.                      |
 
 ## Completion modes
 

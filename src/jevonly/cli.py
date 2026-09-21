@@ -106,8 +106,10 @@ def _run(args):
     facts = _facts(args.facts)
     task = {
         "id": "cli",
-        "env": "browser",
-        "start": args.start,
+        "env": "computer" if args.app else "browser",
+        "start": args.start or f"app://{args.app}",
+        "app": args.app,
+        "launch": bool(args.launch),
         "goal": args.goal,
         "facts": facts,
         "terminal": {},
@@ -157,7 +159,14 @@ def _parser():
 
     run = commands.add_parser("run", help="run a browser task")
     run.add_argument("--goal", required=True, help="natural-language goal")
-    run.add_argument("--start", required=True, help="public starting URL")
+    target = run.add_mutually_exclusive_group(required=True)
+    target.add_argument("--start", help="public starting URL (the browser environment)")
+    target.add_argument(
+        "--app",
+        help="a desktop application to drive instead of a web page, by the name the OS shows (macOS/Windows, "
+        "needs Kiro Crew with Computer Use switched on)",
+    )
+    run.add_argument("--launch", action="store_true", help="with --app: open the application if it is not running")
     run.add_argument("--facts", help="JSON object containing known values")
     run.add_argument("--variant", choices=("std", "noaccept_kb"), default="std")
     run.add_argument("--max-steps", type=int, default=28)

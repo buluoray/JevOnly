@@ -12,6 +12,7 @@ JevOnly is two layers. `jevonly.core` holds the rules -- closed choices, judge /
 | `jevonly.core.env`                       | The `Environment` protocol: `observe`, `act`, `undo`, `fingerprint`, `keyboard`, `inflight`, `wait_inflight`, `close`, plus the optional members the loop reads with `hasattr`. |
 | `jevonly.envs`                           | Registry: `register(name, factory)` / `make(task)`; a task's `env` field (default `browser`) selects the environment.                                                           |
 | `jevonly.envs.browser`                   | `BrowserEnv`; starts the Node child, translates snapshots to stable candidates, maintains undo state, and exposes act/observe/terminal operations.                              |
+| `jevonly.envs.computer`                  | `ComputerEnv`; one native application window through Kiro Crew's governed computer-use layer (`KiroCrewDriver`), accessibility actions only. macOS and Windows.                 |
 | `jevonly.core.keyboard`                  | Bounded goal-derived typing and autocomplete interaction.                                                                                                                       |
 | `jevonly.core.copy`                      | Closed-choice narrowing from page units to one checked value.                                                                                                                   |
 | `jevonly.core.loop`                      | `run_task`; owns planning, thresholds, history, retry, undo, risk, completion, and the event callback contract.                                                                 |
@@ -121,3 +122,36 @@ Each candidate is a dict with at least `id`, `kind` (`click` / `fill` / `select`
 `find`), `desc` (what Jev reads), `role`, `name` and optional `context` / `value` / `options`. The
 core never inspects the environment's internals beyond this contract; the browser environment is the
 worked example.
+
+`undo` may return `{"restored": False, "error": ...}` when it could not take the last action back; the
+loop then escalates (`stopped = "escalate_undo_failed"`) rather than treating the state as restored.
+An environment whose fields cannot be written as one action sets `supports_atomic_batch = False`, and
+the loop does not offer the whole-form pass there.
+
+## The desktop environment
+
+`jevonly.envs.computer` drives one window of one native application. A task names the app
+(`"env": "computer", "app": "Notes"`, or `jevonly run --app Notes ...`; `--launch` opens it when it
+is not running). It does not talk to the accessibility API itself: `KiroCrewDriver` runs the same
+governed steps Kiro Crew's own `computer_*` tools run, in the same order -- the Computer Use switch,
+the operator's app policy, a drift check against a fresh walk before every mutation, the secure-field
+and sensitive-text refusal for anything typed, settle-then-refresh, and the audit line -- through the
+same `kiro_crew.computer_use` service, policy and gate modules. Kiro Crew must be installed in the same
+interpreter (it is not on PyPI: `pip install git+https://github.com/kirodotdev/KiroCrew.git`), and its
+Linux backend is a typed refusal, so the environment is live on macOS and Windows.
+
+What maps to what:
+
+| Browser                           | Desktop                                                                                                                                                                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| URL                               | `app://<app>/<pid>/<window id>`                                                                                                                                                                                          |
+| element index from a DOM snapshot | the walk index, valid only against the walk that produced it; a candidate from an older walk is refused                                                                                                                  |
+| page text lines                   | static texts, `label: value` for fields, and each row as one unit joining its descendants (`text_units`)                                                                                                                 |
+| click / fill / select             | accessibility press; `set_value` with a typed fallback when the value does not read back; a popup is pressed and its items are the next candidates                                                                       |
+| back / find                       | not offered                                                                                                                                                                                                              |
+| reload or history back on undo    | a written field is restored to its previous value; a press that opened a menu is closed with Escape; anything else reports `restored=False` and the loop escalates. There is no Cmd+Z: it would undo the user's own edit |
+| whole-form pass                   | not offered (`supports_atomic_batch = False`): desktop fields re-render on edit, so each is filled and drift-checked alone                                                                                               |
+
+Secure fields are never listed and contribute no text. A press whose label is a destructive verb
+(Delete, Send, Purchase, Empty Trash, ...) is marked irreversible before Jev's risk question is asked.
+No coordinates, drags or pointer moves are ever requested.

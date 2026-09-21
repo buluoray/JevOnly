@@ -192,6 +192,17 @@ def form_fill_candidate(cands, facts):
     }
 
 
+def undo_failure(env):
+    """Undo through the environment and return why it could NOT restore the state, or None when it did.
+    An environment that returns nothing from ``undo`` is taken at its word (the browser reloads or goes
+    back); one that returns ``{"restored": False, "error": ...}`` could not compensate the last action,
+    and the loop must not narrate history as if it had."""
+    r = env.undo()
+    if isinstance(r, dict) and r.get("restored") is False:
+        return str(r.get("error") or "the environment could not restore the previous state")
+    return None
+
+
 def run_task(task, variant="std", rep=0, on_event=None, stop=None):
     """`on_event(kind, payload)` and `stop()` are optional seams for a live viewer: events narrate the
     loop's decisions (observe / plan / act / verify / undo / stop) and `stop()` returning True ends the
@@ -529,13 +540,19 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             step=step,
                             text=f"{h_now} is treated as a wall for the rest of this run; its links are no longer offered",
                         )
-                    env.undo()
+                    failed = undo_failure(env)
                     emit(
                         "undo",
                         step=step,
                         reason="the page offers nothing to act on (a wall or an error page) -> undo the last action and re-plan",
                         screenshot=shot(),
                     )
+                    if failed:
+                        rec["events"].append(f"undo failed ({failed}) -> the state was not restored, escalate")
+                        log["stopped"] = "escalate_undo_failed"
+                        log["escalated"] = True
+                        log["steps"].append(rec)
+                        break
                     if history and history[-1].get("step") == last_taken[4]:
                         history.pop()
                     rejected.setdefault(last_taken[0], {})[last_taken[1]] = 0.0
@@ -544,7 +561,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                     log["steps"].append(rec)
                     step += 1
                     continue
-            ff = form_fill_candidate(all_cands, task["facts"])
+            ff = form_fill_candidate(all_cands, task["facts"]) if getattr(env, "supports_atomic_batch", True) else None
             if ff is not None:
                 all_cands = [*all_cands, ff]
             dead = rejected.get(fp, {})
@@ -660,13 +677,19 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                     break
                 else:
                     rec["events"].append("offpath -> undo, replan")
-                    env.undo()
+                    failed = undo_failure(env)
                     emit(
                         "undo",
                         step=step,
                         reason=f"off the task's path ({off:.2f} >= {offpath_t}) -> undo the last action and re-plan",
                         screenshot=shot(),
                     )
+                    if failed:
+                        rec["events"].append(f"undo failed ({failed}) -> the state was not restored, escalate")
+                        log["stopped"] = "escalate_undo_failed"
+                        log["escalated"] = True
+                        log["steps"].append(rec)
+                        break
                     if history and history[-1].get("step") == last_taken[4]:
                         history.pop()  # the undone action leaves the record instead of being narrated
                     rejected.setdefault(last_taken[0], {})[last_taken[1]] = 0.0
@@ -1742,6 +1765,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             log["escalated"] = True
                             escalate = True
                     else:
+                        undo_failed = None
                         if changed:
                             if pre_typed and hasattr(env, "keyboard") and not obs.get("open_dialog"):
                                 # The typing opened a suggestion overlay; undo restores the field but does not
@@ -1753,7 +1777,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                                 # text on every visit ("Paris CDG" four times over).
                                 kb_value.pop(cand["target_key"], None)
                                 kb_bad.setdefault(cand["target_key"], set()).add(pre_typed)
-                            env.undo()
+                            undo_failed = undo_failure(env)
                             log["backtracks"] = log.get("backtracks", 0) + 1
                             ev["_undone"] = True
                             # A page with (almost) nothing on it after a navigation to another site is a wall
@@ -1762,7 +1786,8 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                             host_after = urllib.parse.urlsplit(after.get("url") or "").hostname or ""
                             host_before = urllib.parse.urlsplit(obs.get("url") or "").hostname or ""
                             if (
-                                host_after
+                                not undo_failed
+                                and host_after
                                 and host_after != host_before
                                 and len(after.get("elements", [])) <= 2
                                 and not after.get("open_dialog")  # a consent dialog with Accept/Reject is not a wall
@@ -1776,7 +1801,16 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                                         step=step,
                                         text=f'{h} answered with a page that has nothing to act on ("{text}") -> treating it as a wall; links to it are no longer offered this run',
                                     )
-                        if not retried_same and not ev.get("action_error"):
+                        if undo_failed:
+                            # The environment could not take the action back (a press with no compensating
+                            # write). The state is whatever the action left; nothing here may narrate it as
+                            # restored, and a person decides what happens next.
+                            ev["outcome"] = f"undo failed ({undo_failed}) -> the state was not restored, escalate"
+                            log["stopped"] = "escalate_undo_failed"
+                            log["escalated"] = True
+                            escalate = True
+                            obs = after
+                        elif not retried_same and not ev.get("action_error"):
                             ev["outcome"] = ("undone" if changed else "no effect") + " -> retry same action"
                             retried_same = True
                             if changed:
