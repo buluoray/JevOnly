@@ -99,6 +99,19 @@ async function launchBrowser(env = process.env) {
       }
     }, entries);
   }
+  // JEVONLY_SET_LOCALSTORAGE overwrites its keys, so a run starts from a known state even in a
+  // persistent profile an earlier run changed. It applies once per browser session (the first
+  // document), never again on a later navigation: the run's own changes must survive a reload.
+  const force = process.env.JEVONLY_SET_LOCALSTORAGE;
+  if (force) {
+    const entries = JSON.parse(force);
+    await context.addInitScript((kv) => {
+      const marker = '__jevonly_localstorage_set';
+      if (window.sessionStorage.getItem(marker)) return;
+      for (const [k, v] of Object.entries(kv)) window.localStorage.setItem(k, v);
+      window.sessionStorage.setItem(marker, '1');
+    }, entries);
+  }
 
   return { browser, page, context, headless, profileDir, channel, viewport };
 }

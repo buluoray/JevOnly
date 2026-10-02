@@ -13,6 +13,7 @@ The child launches Chromium before reading commands. Playwright is resolved in t
 - `JEV_CHROME_CHANNEL`: a Playwright Chromium channel such as `chrome`; the bundled Chromium is used if the channel cannot launch.
 - `JEV_PROFILE_DIR`: persistent browser profile directory.
 - `JEVONLY_INIT_LOCALSTORAGE`: a JSON object of localStorage keys set before any page script runs, for keys not already set. Use it to skip a test instance's first-run screens.
+- `JEVONLY_SET_LOCALSTORAGE`: a JSON object of localStorage keys set before the first page script of the browser session runs, overwriting any value already there, so a run starts from a known state in a persistent profile. Later navigations in the same session leave them alone.
 - `JEV_HEADED=1`: launch a visible browser instead of headless Chromium.
 - `JEV_FRAMES`: Unix-domain socket receiving newline-delimited screencast frame objects independently of standard output.
 
