@@ -88,6 +88,18 @@ async function launchBrowser(env = process.env) {
     await page.addInitScript(hideWebdriver).catch(() => null);
   }
 
+  // QA prototype: seed localStorage (JSON object) before the app boots, so a
+  // fresh test gateway's first-run guide does not cover the page under test.
+  const seed = process.env.JEVONLY_INIT_LOCALSTORAGE;
+  if (seed) {
+    const entries = JSON.parse(seed);
+    await context.addInitScript((kv) => {
+      for (const [k, v] of Object.entries(kv)) {
+        if (window.localStorage.getItem(k) === null) window.localStorage.setItem(k, v);
+      }
+    }, entries);
+  }
+
   return { browser, page, context, headless, profileDir, channel, viewport };
 }
 

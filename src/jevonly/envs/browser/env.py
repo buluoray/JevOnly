@@ -131,6 +131,8 @@ class BrowserEnv:
                     **({"value": c["value"]} if c.get("value") else {}),
                     **({"hint": c["hint"]} if c.get("hint") else {}),
                     **({"checked": c["checked"]} if "checked" in c else {}),
+                    **({"selected": c["selected"]} if "selected" in c else {}),
+                    **({"current": True} if c.get("current") else {}),
                     **({"expanded": c["expanded"]} if "expanded" in c else {}),
                     **({"options": c["options"][:8]} if c.get("options") else {}),
                 }
@@ -165,6 +167,10 @@ class BrowserEnv:
                 bits.append("options: " + ", ".join(c["options"][:8]))
             if "checked" in c:
                 bits.append("checked" if c["checked"] else "unchecked")
+            if "selected" in c:
+                bits.append("selected" if c["selected"] else "not selected")
+            if c.get("current"):
+                bits.append("the page already open")
             if c.get("value"):
                 bits.append(f"current value: {c['value']}")
             elif c.get("placeholder"):
@@ -534,7 +540,10 @@ class BrowserEnv:
 
     def fingerprint(self, obs):
         form = json.dumps(
-            [(e["role"], e["name"], e.get("value", ""), e.get("checked", "")) for e in obs["elements"]],
+            [
+                (e["role"], e["name"], e.get("value", ""), e.get("checked", ""), e.get("selected", ""))
+                for e in obs["elements"]
+            ],
             ensure_ascii=False,
         )
         form += "|" + "|".join(obs.get("popup_messages_from_last_action") or [])
@@ -587,6 +596,8 @@ class BrowserEnv:
             return any(exp for p, exp in rows if p == cheapest)
         if "url_contains" in t:
             return t["url_contains"] in s["url"]
+        if "selected" in t:
+            return self._is_selected(t["selected"])
         if "text" in t:
             return t["text"] in text
         if "completed_text" in t:
@@ -598,6 +609,13 @@ class BrowserEnv:
             items = [c for c in s["candidates"] if c["role"] == "checkbox" and c.get("name") == "Toggle Todo"]
             return bool(checked) and len(items) == t["count_items"]
         return False
+
+    def _is_selected(self, name):
+        """A control with this exact accessible name reports an ARIA selected/pressed/checked state of true."""
+        return any(
+            (c.get("name") or "").strip() == name and (c.get("selected") or c.get("checked"))
+            for c in self._snap["candidates"]
+        )
 
     def acceptance(self, obs):
         t = self.task["terminal"]
@@ -627,6 +645,9 @@ class BrowserEnv:
             return [
                 f'expected to reach a page whose address contains "{t["url_contains"]}": {"reached" if t["url_contains"] in s["url"] else "not yet"}'
             ]
+        if "selected" in t:
+            state = "selected" if self._is_selected(t["selected"]) else "not selected yet"
+            return [f'expected the control "{t["selected"]}" to be selected: {state}']
         if "text" in t:
             seen = t["text"] in (s["visible_text"] + " ".join(s.get("headings", [])))
             return [f'expected confirmation text "{t["text"]}": {"visible" if seen else "not visible yet"}']

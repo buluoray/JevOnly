@@ -54,7 +54,7 @@ function describeCandidate(candidate) {
   for (const key of ['hint', 'host', 'pseudo', 'value', 'placeholder', 'input_type']) {
     if (candidate[key] !== undefined && candidate[key] !== '') result[key] = candidate[key];
   }
-  for (const key of ['options', 'checked', 'expanded', 'sig']) {
+  for (const key of ['options', 'checked', 'selected', 'current', 'expanded', 'sig']) {
     if (candidate[key] !== undefined) result[key] = candidate[key];
   }
   return result;
@@ -188,6 +188,26 @@ async function snapshot(page, opts = {}) {
     for (const element of document.querySelectorAll(selector)) {
       const rect = element.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0 || element.type === 'hidden') continue;
+      // A control that is in the DOM but not reachable -- inside an inert or aria-hidden subtree,
+      // hidden through an ancestor's visibility, or slid off the side of the window (a collapsed
+      // rail) -- does nothing when clicked. Opacity is not tested: a custom switch hides its real
+      // input at opacity 0 and is still the thing to click. Offering it lets the model click a hidden
+      // navigation item over and over.
+      if (element.closest('[inert],[aria-hidden="true"]')) continue;
+      if (typeof element.checkVisibility === 'function' && !element.checkVisibility({ checkVisibilityCSS: true })) {
+        continue;
+      }
+      if (rect.right <= 0 || rect.left >= window.innerWidth) continue;
+      // On screen but covered or clipped away (a rail collapsed to zero width keeps its buttons'
+      // boxes): the point at its centre belongs to something else, so a click would land there.
+      {
+        const cx = rect.x + rect.width / 2;
+        const cy = rect.y + rect.height / 2;
+        if (cx >= 0 && cy >= 0 && cx < window.innerWidth && cy < window.innerHeight) {
+          const top = document.elementFromPoint(cx, cy);
+          if (top && !element.contains(top) && !top.contains(element) && !element.labels?.length) continue;
+        }
+      }
       if (
         element.matches(':disabled') ||
         element.getAttribute('aria-disabled') === 'true' ||
@@ -227,11 +247,25 @@ async function snapshot(page, opts = {}) {
           area(dialog) >= viewportArea * 0.33),
     );
     const activeElement = document.activeElement;
+    // A listbox is a popup only when something opened it (a control pointing at it with
+    // aria-expanded=true) or it floats over the page. A static listbox used as in-page navigation
+    // keeps focus after a click, and scoping to it would hide the page it navigated to.
+    const isPopupListbox = (box) => {
+      if (!box.matches('[role=listbox]')) return true;
+      const pos = getComputedStyle(box).position;
+      if (pos === 'absolute' || pos === 'fixed') return true;
+      return Boolean(
+        box.id &&
+        document.querySelector(
+          `[aria-expanded="true"][aria-controls~="${CSS.escape(box.id)}"],[aria-expanded="true"][aria-owns~="${CSS.escape(box.id)}"]`,
+        ),
+      );
+    };
     const holder =
       activeElement && activeElement !== document.body
         ? activeElement.closest('[role=dialog],dialog,[aria-modal="true"],[role=listbox]')
         : null;
-    if (holder && area(holder) > 0 && !modals.includes(holder)) modals.push(holder);
+    if (holder && area(holder) > 0 && !modals.includes(holder) && isPopupListbox(holder)) modals.push(holder);
     // A popup does not have to be big or aria-modal to be the thing the user is looking at: the listbox
     // a focused combobox points at (aria-controls / aria-owns), or any shown dialog that holds visible
     // options, is where the next click belongs. Size alone misjudges a suggestion list that is a few
@@ -362,6 +396,17 @@ async function snapshot(page, opts = {}) {
         extra.value = element.selectedOptions[0] ? element.selectedOptions[0].text.trim() : '';
       }
       if (element.type === 'checkbox' || element.type === 'radio') extra.checked = element.checked;
+      // Custom controls carry their state in ARIA instead: a segmented button's aria-pressed, a
+      // switch's aria-checked, a tab's aria-selected, the nav link for the page already open
+      // (aria-current). Without it a text-only reader cannot tell which option is chosen.
+      else {
+        const state = ['aria-pressed', 'aria-checked', 'aria-selected']
+          .map((name) => element.getAttribute(name))
+          .find((v) => v === 'true' || v === 'false');
+        if (state) extra.selected = state === 'true';
+        const current = element.getAttribute('aria-current');
+        if (current && current !== 'false') extra.current = true;
+      }
       if (
         (tag === 'input' || tag === 'textarea') &&
         element.value &&
