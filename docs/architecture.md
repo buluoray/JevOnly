@@ -80,13 +80,14 @@ See [Browser child protocol](browser-protocol.md) for every command and field.
 
 ## Extension seams
 
-| Seam                        | Contract                                                                                                                             |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Library execution           | `run_task(task, variant="std", rep=0, on_event=None, stop=None)`                                                                     |
-| Event consumer              | `on_event(kind, payload)`; see [Events](events.md). Exceptions from the callback are suppressed so observability cannot break a run. |
-| Cooperative stop            | `stop()` returns truthy; checked before observations and actions.                                                                    |
-| Runtime credential rotation | Set a new `TYPESAFE_API_KEY`; `jev()` reads it at the next call.                                                                     |
-| Browser executable          | `JEVONLY_NODE` selects Node; `JEV_PLAYWRIGHT` selects a Playwright module or directory.                                              |
+| Seam                        | Contract                                                                                                                                            |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Library execution           | `run_task(task, variant="std", rep=0, on_event=None, stop=None)`                                                                                    |
+| Event consumer              | `on_event(kind, payload)`; see [Events](events.md). Exceptions from the callback are suppressed so observability cannot break a run.                |
+| Cooperative stop            | `stop()` returns truthy; checked before observations and actions.                                                                                   |
+| Runtime credential rotation | Set a new `TYPESAFE_API_KEY`; `jev()` reads it at the next call.                                                                                    |
+| Browser executable          | `JEVONLY_NODE` selects Node; `JEV_PLAYWRIGHT` selects a Playwright module or directory.                                                             |
+| Local decision model        | `JEVONLY_LOCAL=host:port` sends every call to a System One server on a loopback host, over plain HTTP with no key; `JEVONLY_MODEL` names its model. |
 
 ## Writing an environment
 

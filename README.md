@@ -69,8 +69,10 @@ One case per line:
  "expect": {"text": "Cart (1)", "answer": ["1"]}}
 ```
 
-`expect.text` / `expect.url_contains` is a code-owned check on the page — the run passes only when the page
-really shows it, whatever Jev says. `expect.answer` lists substrings the reported answer must contain. The
+`expect.text` / `expect.url_contains` / `expect.selected` is a code-owned check on the page — the run passes
+only when the page really shows it, whatever Jev says. `expect.selected` names a control (by accessible name)
+whose ARIA state must read selected, pressed or checked, for end states that are a choice rather than text.
+`expect.answer` lists substrings the reported answer must contain. The
 command prints a table (pass count, median steps, seconds, Jev calls, tokens, estimated cost, why a run
 failed), writes `qa-report.json` + `qa-report.md`, and exits non-zero when any run failed. A case costs
 about a cent per run (measured: $0.014 for a 20-step task).

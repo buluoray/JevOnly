@@ -8,17 +8,29 @@ from contextlib import suppress
 
 API_HOST = "api.typesafe.ai"
 API_PATH = "/v1/systemone"
-MODEL = "jev-latest"
+MODEL = os.environ.get("JEVONLY_MODEL", "jev-latest")
+# JEVONLY_LOCAL=host:port sends every call to a System One server on this machine
+# (plain HTTP, no key) instead of hosted Jev. Only a loopback host is accepted: the
+# page state goes in the request, so this must never become a plain-text egress.
+LOCAL = os.environ.get("JEVONLY_LOCAL", "")
+_LOOPBACK = {"127.0.0.1", "localhost", "::1", "[::1]"}
+if LOCAL and LOCAL.rpartition(":")[0] not in _LOOPBACK:
+    raise RuntimeError(f"JEVONLY_LOCAL must name a loopback host, got {LOCAL!r}")
 CALLS: list[dict] = []
 ON_JEV = None
-_CONN: http.client.HTTPSConnection | None = None
+_CONN: http.client.HTTPConnection | None = None
 
 
-def _conn() -> http.client.HTTPSConnection:
-    """Return the process-wide keep-alive HTTPS connection."""
+def _conn() -> http.client.HTTPConnection:
+    """Return the process-wide keep-alive connection."""
     global _CONN
     if _CONN is None:
-        _CONN = http.client.HTTPSConnection(API_HOST, timeout=20)
+        if LOCAL:
+            host, _, port = LOCAL.rpartition(":")
+            host = host.strip("[]")
+            _CONN = http.client.HTTPConnection(host, int(port or 80), timeout=120)
+        else:
+            _CONN = http.client.HTTPSConnection(API_HOST, timeout=20)
     return _CONN
 
 
@@ -32,18 +44,38 @@ def _reset_conn() -> None:
         _CONN = None
 
 
+def _trivial(q):
+    """A choice with one option has one answer; a local server may refuse to be asked it."""
+    crit = q.get("criteria") or {}
+    if q.get("type") == "choice" and len(crit) == 1:
+        only = next(iter(crit))
+        return {"type": "choice", "choice": only, "probabilities": {only: 1.0}, "confidence": 1.0}
+    return None
+
+
 def jev(state, questions, tag):
     """Ask Jev to answer closed questions about state.
 
     The credential is read for every call so importing JevOnly never requires a key
     and long-running processes can rotate credentials without being restarted.
     """
+    if LOCAL:
+        fixed = {k: a for k, q in questions.items() if (a := _trivial(q)) is not None}
+        if fixed:
+            rest = {k: q for k, q in questions.items() if k not in fixed}
+            return {**(_ask(state, rest, tag) if rest else {}), **fixed}
+    return _ask(state, questions, tag)
+
+
+def _ask(state, questions, tag):
     key = os.environ.get("TYPESAFE_API_KEY", "")
-    if not key:
+    if not key and not LOCAL:
         raise RuntimeError("TYPESAFE_API_KEY is required to call Jev")
 
     body = json.dumps({"state": state, "model": MODEL, "questions": questions}, ensure_ascii=False).encode("utf-8")
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Connection": "keep-alive"}
+    headers = {"Content-Type": "application/json", "Connection": "keep-alive"}
+    if key and not LOCAL:
+        headers["Authorization"] = f"Bearer {key}"
     delay = 0.5
     last = None
     for attempt in range(6):

@@ -7,7 +7,8 @@ A case is one JSON object per line of the suite file:
      "goal": "Add the product with the given sku to the cart and stop when the cart badge shows 1",
      "expect": {"text": "Cart (1)", "answer": ["1"]}}
 
-`expect.text` / `expect.url_contains` become the run's code-owned terminal check (the same check `jevonly
+`expect.text` / `expect.url_contains` / `expect.selected` (the accessible name of a control that must
+report an ARIA selected, pressed or checked state) become the run's code-owned terminal check (the same check `jevonly
 run` uses when a task declares one): the run is a pass only when the page really shows it, whatever Jev
 says. `expect.answer` lists substrings that must appear in the reported answer or the copied values.
 A case with no `expect` passes on the run's own success flag.
@@ -77,7 +78,7 @@ def build_task(
     }
 
 
-TERMINAL_KEYS = ("text", "url_contains")
+TERMINAL_KEYS = ("text", "url_contains", "selected")
 
 
 def load_suite(path):
@@ -137,6 +138,7 @@ def run_case(case, rep, out_dir, *, variant="std", max_steps=None, prefilter=Tru
         thresholds=case.get("thresholds"),
         prefilter=prefilter,
         task_id=case["id"],
+        irreversible=case.get("irreversible") or "refuse",
     )
     path = Path(out_dir) / f"{case['id']}-r{rep}.jsonl"
     end = {}

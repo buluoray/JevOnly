@@ -135,6 +135,15 @@ def wrong_value(task, right):
     return "wrong value 123"
 
 
+def _same_place(before, after):
+    """Same URL (ignoring the fragment and query) and the same headings: a click went nowhere."""
+
+    def where(o):
+        return ((o.get("url") or "").split("#", 1)[0].split("?", 1)[0], tuple(o.get("headings") or ()))
+
+    return where(before) == where(after)
+
+
 def page_key(url):
     """One notion of "this page" for every per-page memo: the URL without its query string and fragment.
     Query strings churn on every visit to a results page (Amazon rewrites qid/ds), so a memo keyed by the
@@ -295,6 +304,7 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
     )  # history: [{step, action, side_effect, verify, progress}]; used_facts: target_key -> set(fact keys)
     rejected = {}  # fingerprint -> {cand_id: verify} actions that failed verification here
     banned = set()  # actions withdrawn task-wide (toggles: see the loop head)
+    noop_targets = {}  # page key -> target keys whose click stayed on the same page (QA prototype)
     act_failures = {}  # target_key -> action errors (timeouts, detached); three withdraw the target
     pending_fault = None  # a fault whose step could not express it, waiting for one that can
     used_retry_rescue = False  # the one permitted retry of a provably-undelivered committing action
@@ -577,7 +587,9 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
             cands = [
                 c
                 for c in all_cands
-                if (c["id"] not in dead or (forced_wanted and c["id"] == "copy")) and c["id"] not in banned
+                if (c["id"] not in dead or (forced_wanted and c["id"] == "copy"))
+                and c["id"] not in banned
+                and c.get("target_key") not in noop_targets.get(pk, ())
             ]
             least_bad = None
             if not cands or (dead and len(dead) >= min(MAX_ATTEMPTS, len(all_cands))):
@@ -1699,6 +1711,17 @@ def run_task(task, variant="std", rep=0, on_event=None, stop=None):
                         }
                     )
                     last_taken = (fp, cand["id"], ver < verify_t, side, step)
+                    if side != "irreversible" and _same_place(obs, after) and cand.get("target_key"):
+                        # QA prototype: the click landed on the same URL with the same headings, so it
+                        # navigated nowhere. Live counters still move the fingerprint, which is why this
+                        # compares structure instead. Offering the target again here only lets a weak
+                        # model repeat it.
+                        noop_targets.setdefault(pk, set()).add(cand["target_key"])
+                        emit(
+                            "note",
+                            step=step,
+                            text=f"{desc} stayed on the same page -> withdrawn on this page",
+                        )
                     # Stall guard. Verify accepts each of these clicks (the page does change) and the
                     # revisit guard never fires (each state is new), so the loop needs its own view: the
                     # last STALL_K accepted actions all inside one repeated widget, hitting fewer distinct
